@@ -1398,7 +1398,7 @@ Run `python scripts/check_submission.py` and fix every FAIL:
 
 ```
 Section 0 · starter kit
-  [ ] 0 STARTER-TODO markers remaining
+  [ ] 0 todo markers remaining
   [ ] 0 raise NotImplementedError in source
 
 Section A · structure & git

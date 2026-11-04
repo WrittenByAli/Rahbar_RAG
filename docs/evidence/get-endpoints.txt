@@ -1,0 +1,6 @@
+$ kubectl get endpoints -n rahbar
+NAME     ENDPOINTS                                            AGE
+api      10.244.0.12:8000,10.244.0.13:8000,10.244.0.14:8000  4h
+chroma   10.244.0.8:8000                                      4h
+redis    10.244.0.9:6379                                      4h
+ui       10.244.0.15:8080                                     4h

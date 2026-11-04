@@ -1,0 +1,85 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r api/requirements.txt -r indexer/requirements.txt pytest
+      - run: pytest api/tests/ indexer/tests/ -v
+
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t rahbar-api:${{ github.sha }} -f api/Dockerfile api/
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: rahbar-api:${{ github.sha }}
+          severity: CRITICAL,HIGH
+          exit-code: "0"
+
+  kubeconform:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install kubeconform
+        run: |
+          curl -sL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
+          sudo mv kubeconform /usr/local/bin/
+      - run: kubectl kustomize k8s/overlays/prod/ | kubeconform -strict -summary
+
+  push:
+    runs-on: ubuntu-latest
+    needs: [test, scan, kubeconform]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build and push images
+        run: |
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/rahbar-api:${{ github.sha }} -f api/Dockerfile api/
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/rahbar-indexer:${{ github.sha }} -f indexer/Dockerfile indexer/
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/rahbar-ui:${{ github.sha }} -f ui/Dockerfile .
+          docker tag ${{ secrets.DOCKERHUB_USERNAME }}/rahbar-api:${{ github.sha }} ${{ secrets.DOCKERHUB_USERNAME }}/rahbar-api:latest
+          docker tag ${{ secrets.DOCKERHUB_USERNAME }}/rahbar-indexer:${{ github.sha }} ${{ secrets.DOCKERHUB_USERNAME }}/rahbar-indexer:latest
+          docker tag ${{ secrets.DOCKERHUB_USERNAME }}/rahbar-ui:${{ github.sha }} ${{ secrets.DOCKERHUB_USERNAME }}/rahbar-ui:latest
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/rahbar-api:${{ github.sha }}
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/rahbar-api:latest
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/rahbar-indexer:${{ github.sha }}
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/rahbar-indexer:latest
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/rahbar-ui:${{ github.sha }}
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/rahbar-ui:latest
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: push
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to production
+        run: |
+          kubectl apply -k k8s/overlays/prod/
+          kubectl rollout status deployment/api -n rahbar --timeout=120s
+          kubectl rollout status deployment/ui -n rahbar --timeout=120s
