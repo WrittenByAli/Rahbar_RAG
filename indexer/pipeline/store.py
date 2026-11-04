@@ -16,9 +16,36 @@ def get_client(settings: IndexerSettings) -> Any:
                                settings=ChromaSettings(anonymized_telemetry=False))
 
 
+UPSERT_BATCH = 5000
+
+
 def store(chunks: list[Chunk], vectors: list[list[float]], settings: IndexerSettings) -> int:
     """Write every chunk with its vector and metadata, and record the embedding model
     and vector dimension in the collection metadata (section 4.4). Return the count."""
-    # STARTER-TODO(3.1, 4.4): implement storing. Decide what happens to the old index
-    # while the API is serving from it, and write that decision into ADR 0001.
-    raise NotImplementedError("store: see STARTER-TODO(3.1, 4.4)")
+    client = get_client(settings)
+
+    try:
+        client.delete_collection(settings.collection)
+    except Exception:
+        pass
+
+    collection = client.create_collection(
+        name=settings.collection,
+        metadata={
+            "hnsw:space": "cosine",
+            "embed_model": settings.embed_model,
+            "dimension": len(vectors[0]),
+        },
+    )
+
+    for i in range(0, len(chunks), UPSERT_BATCH):
+        batch_chunks = chunks[i : i + UPSERT_BATCH]
+        batch_vectors = vectors[i : i + UPSERT_BATCH]
+        collection.upsert(
+            ids=[c.id for c in batch_chunks],
+            embeddings=batch_vectors,
+            documents=[c.text for c in batch_chunks],
+            metadatas=[c.metadata() for c in batch_chunks],
+        )
+
+    return int(collection.count())
