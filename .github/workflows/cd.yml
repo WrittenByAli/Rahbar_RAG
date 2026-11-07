@@ -60,7 +60,7 @@ jobs:
         run: |
           docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/rahbar-api:${{ github.sha }} -f api/Dockerfile api/
           docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/rahbar-indexer:${{ github.sha }} -f indexer/Dockerfile indexer/
-          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/rahbar-ui:${{ github.sha }} -f ui/Dockerfile .
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/rahbar-ui:${{ github.sha }} ui/
           docker tag ${{ secrets.DOCKERHUB_USERNAME }}/rahbar-api:${{ github.sha }} ${{ secrets.DOCKERHUB_USERNAME }}/rahbar-api:latest
           docker tag ${{ secrets.DOCKERHUB_USERNAME }}/rahbar-indexer:${{ github.sha }} ${{ secrets.DOCKERHUB_USERNAME }}/rahbar-indexer:latest
           docker tag ${{ secrets.DOCKERHUB_USERNAME }}/rahbar-ui:${{ github.sha }} ${{ secrets.DOCKERHUB_USERNAME }}/rahbar-ui:latest
