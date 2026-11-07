@@ -5,6 +5,7 @@ on:
     branches: [dev]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   lint:
@@ -85,6 +86,22 @@ jobs:
         uses: helm/kind-action@v1.10.0
         with:
           cluster_name: kind
+      # The eval gate needs real retrieval, which needs real embeddings. OLLAMA_URL's
+      # default (host.minikube.internal) only resolves on minikube, and nothing in this
+      # job ever ran a real embedding model before, so recall/abstention were untestable
+      # and the gate below was `|| true`-ed into silence. Run Ollama as a plain container
+      # on kind's own docker network (always named "kind", independent of cluster_name) so
+      # pods inside the cluster can reach it by IP - the standard way to give a kind
+      # cluster access to something outside it.
+      - name: Start Ollama for real embeddings
+        run: |
+          docker run -d --name ollama --network kind -p 11434:11434 ollama/ollama:0.40.15
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:11434/api/tags >/dev/null 2>&1 && break
+            sleep 2
+          done
+          docker exec ollama ollama pull nomic-embed-text
+          echo "OLLAMA_IP=$(docker inspect -f '{{.NetworkSettings.Networks.kind.IPAddress}}' ollama)" >> "$GITHUB_ENV"
       - name: Build and load images
         run: |
           docker build -t rahbar-api:${{ github.sha }} -f api/Dockerfile api/
@@ -94,14 +111,57 @@ jobs:
       - name: Deploy to kind
         run: |
           kubectl kustomize k8s/overlays/dev/ | sed "s|rahbar-api:dev|rahbar-api:${{ github.sha }}|g; s|rahbar-indexer:dev|rahbar-indexer:${{ github.sha }}|g; s|rahbar-ui:dev|rahbar-ui:${{ github.sha }}|g" | kubectl apply -f -
-          kubectl create secret generic rahbar-secret -n rahbar --from-literal=LLM_API_KEY=unused || true
-          kubectl wait --for=condition=available deployment/api -n rahbar --timeout=120s || true
-      - name: Run indexer with fixtures
+          kubectl create secret generic rahbar-secret -n rahbar --from-literal=LLM_API_KEY=unused --dry-run=client -o yaml | kubectl apply -f -
+      - name: Switch to real retrieval for this run
         run: |
-          kubectl create job indexer-e2e --from=cronjob/reindex -n rahbar || true
-          kubectl wait --for=condition=complete job/indexer-e2e -n rahbar --timeout=120s || true
+          kubectl patch configmap rahbar-config -n rahbar --type merge -p \
+            "{\"data\":{\"RETRIEVER\":\"chroma\",\"EMBED_MODEL\":\"nomic-embed-text\",\"OLLAMA_URL\":\"http://${OLLAMA_IP}:11434\"}}"
+          kubectl rollout restart deployment/api -n rahbar
+      - name: Run indexer against the fixture corpus
+        run: |
+          kubectl create configmap fixture-corpus -n rahbar --from-file=eval/fixtures --dry-run=client -o yaml | kubectl apply -f -
+          cat <<'EOF' | kubectl apply -f -
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: indexer-e2e
+            namespace: rahbar
+          spec:
+            backoffLimit: 1
+            template:
+              metadata:
+                labels:
+                  app: indexer
+              spec:
+                restartPolicy: Never
+                automountServiceAccountToken: false
+                securityContext:
+                  runAsNonRoot: true
+                  runAsUser: 1000
+                containers:
+                  - name: indexer
+                    image: rahbar-indexer:${{ github.sha }}
+                    imagePullPolicy: IfNotPresent
+                    envFrom:
+                      - configMapRef:
+                          name: rahbar-config
+                    securityContext:
+                      allowPrivilegeEscalation: false
+                      readOnlyRootFilesystem: true
+                      capabilities:
+                        drop: ["ALL"]
+                    volumeMounts:
+                      - {name: tmp, mountPath: /tmp}
+                      - {name: corpus, mountPath: /corpus, readOnly: true}
+                volumes:
+                  - {name: tmp, emptyDir: {}}
+                  - {name: corpus, configMap: {name: fixture-corpus}}
+          EOF
+          kubectl wait --for=condition=complete job/indexer-e2e -n rahbar --timeout=180s
+      - name: Wait for API readiness against the real index
+        run: kubectl wait --for=condition=available deployment/api -n rahbar --timeout=180s
       - name: Run eval
         run: |
           pip install httpx pyyaml
           API_URL=$(kubectl get svc api -n rahbar -o jsonpath='{.spec.clusterIP}')
-          python eval/run_eval.py --api http://$API_URL --golden eval/fixtures/golden.fixture.yaml || true
+          python eval/run_eval.py --api http://$API_URL --golden eval/fixtures/golden.fixture.yaml
