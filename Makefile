@@ -13,7 +13,7 @@ INGRESS_IP ?= $(shell minikube ip 2>/dev/null)
 HOST ?= rahbar.local
 
 .DEFAULT_GOAL := help
-.PHONY: help install test lint dev cluster images apply secret index ask fetch eval eval-fixtures check
+.PHONY: help install test lint dev cluster images apply secret corpus-scripts index ask fetch eval eval-fixtures check
 
 help: ## list the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-14s %s\n", $$1, $$2}'
@@ -55,6 +55,11 @@ secret: ## create the LLM key Secret from the LLM_API_KEY variable; never from a
 	@test -n "$$LLM_API_KEY" || { echo "export LLM_API_KEY=... first"; exit 1; }
 	kubectl create secret generic rahbar-secret -n $(NS) \
 	  --from-literal=LLM_API_KEY="$$LLM_API_KEY" --dry-run=client -o yaml | kubectl apply -f -
+
+corpus-scripts: ## package corpus/fetch.py + sources.yaml into a ConfigMap for the indexer's init container (run after `make apply`)
+	kubectl create configmap corpus-fetch-scripts -n $(NS) \
+	  --from-file=corpus/fetch.py --from-file=corpus/sources.yaml \
+	  --dry-run=client -o yaml | kubectl apply -f -
 
 index: ## run the indexer once, from the CronJob's template (needs yours: CronJob reindex)
 	kubectl create job --from=cronjob/reindex reindex-$$(date +%s) -n $(NS)
