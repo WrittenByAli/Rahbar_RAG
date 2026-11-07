@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Score a running RAHBAR against a golden set, and gate CI on the result (section 5).
 
     python eval/run_eval.py --api http://<ingress>                 # your corpus
@@ -8,7 +7,7 @@
 Exit code 0 when every gate passes, 1 when any fails. CI relies on that exit code.
 
 Given: talking to the API, reading the golden set, writing results.json, the exit
-code. Yours: the four functions marked STARTER-TODO. They are the evaluation.
+code. The four scoring functions implement the evaluation.
 """
 
 from __future__ import annotations
@@ -48,28 +47,92 @@ def ask(client: httpx.Client, api: str, question: str) -> dict:
 def recall_at_k(relevant: list[dict], retrieved: list[dict], k: int) -> float | None:
     """Fraction of the relevant (source, section) pairs found in the top k retrieved.
     Return None when the question has no relevant passages (must-abstain questions)."""
-    # STARTER-TODO(5.2): implement. Decide how you match sections and say so in PIPELINE.md.
-    raise NotImplementedError("recall_at_k: see STARTER-TODO(5.2)")
+    if not relevant:
+        return None
+    top_k = retrieved[:k]
+    hits = sum(
+        1 for r in relevant
+        if any(
+            r["source"].strip() == t.get("source", "").strip()
+            and r["section"].strip() == t.get("section", "").strip()
+            for t in top_k
+        )
+    )
+    return hits / len(relevant)
 
 
 def citation_validity(response: dict) -> float | None:
     """Fraction of the response's citations that match a passage in response['retrieved'].
     Return None when there are no citations."""
-    # STARTER-TODO(5.3): implement.
-    raise NotImplementedError("citation_validity: see STARTER-TODO(5.3)")
+    citations = response.get("citations", [])
+    if not citations:
+        return None
+    retrieved = {(r["source"], r["section"]) for r in response.get("retrieved", [])}
+    valid = sum(1 for c in citations if (c["source"], c["section"]) in retrieved)
+    return valid / len(citations)
 
 
 def summarise(rows: list[dict]) -> dict:
     """Overall recall@3, recall@5, citation validity and abstention correctness, plus
     recall@5 broken down by question type. This dict becomes results.json."""
-    # STARTER-TODO(5.2, 5.3): implement.
-    raise NotImplementedError("summarise: see STARTER-TODO(5.2, 5.3)")
+    recalls3: list[float] = []
+    recalls5: list[float] = []
+    cite_vals: list[float] = []
+    abstention_correct = 0
+    abstention_total = 0
+    by_type: dict[str, list[float]] = {}
+
+    for row in rows:
+        resp = row["response"]
+        relevant = row.get("relevant") or []
+        retrieved = resp.get("retrieved", [])
+        must_abstain = row.get("must_abstain", False)
+        qtype = row.get("type", "ordinary")
+
+        r3 = recall_at_k(relevant, retrieved, 3)
+        r5 = recall_at_k(relevant, retrieved, 5)
+        cv = citation_validity(resp)
+
+        if r3 is not None:
+            recalls3.append(r3)
+        if r5 is not None:
+            recalls5.append(r5)
+            by_type.setdefault(qtype, []).append(r5)
+        if cv is not None:
+            cite_vals.append(cv)
+
+        if must_abstain:
+            abstention_total += 1
+            if not resp.get("answered_from_context", True):
+                abstention_correct += 1
+
+    return {
+        "recall@3": round(sum(recalls3) / len(recalls3), 4) if recalls3 else 0.0,
+        "recall@5": round(sum(recalls5) / len(recalls5), 4) if recalls5 else 0.0,
+        "citation_validity": round(sum(cite_vals) / len(cite_vals), 4) if cite_vals else 1.0,
+        "abstention_rate": round(abstention_correct / abstention_total, 4) if abstention_total else 1.0,
+        "recall@5_by_type": {k: round(sum(v) / len(v), 4) for k, v in by_type.items()},
+    }
 
 
 def gate(results: dict, baseline: dict | None) -> list[str]:
     """Return one message per failed gate (section 5.4); an empty list means pass."""
-    # STARTER-TODO(5.4): implement, using the three constants at the top of this file.
-    raise NotImplementedError("gate: see STARTER-TODO(5.4)")
+    failures: list[str] = []
+    if baseline:
+        baseline_r5 = baseline.get("recall@5", 0.0)
+        current_r5 = results.get("recall@5", 0.0)
+        if baseline_r5 - current_r5 > MAX_RECALL5_DROP:
+            failures.append(
+                f"recall@5 dropped from {baseline_r5:.4f} to {current_r5:.4f} "
+                f"(max drop {MAX_RECALL5_DROP})"
+            )
+    cv = results.get("citation_validity", 0.0)
+    if cv < MIN_CITATION_VALIDITY:
+        failures.append(f"citation validity {cv:.4f} < {MIN_CITATION_VALIDITY}")
+    ar = results.get("abstention_rate", 0.0)
+    if ar < REQUIRED_ABSTENTION:
+        failures.append(f"abstention rate {ar:.4f} < {REQUIRED_ABSTENTION}")
+    return failures
 
 
 def main() -> int:

@@ -11,6 +11,7 @@ against this index; run the real pipeline to replace it.
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 from typing import Any
 
@@ -46,8 +47,8 @@ def write_dummy_index(settings: IndexerSettings, client: Any) -> int:
     """Rebuild the collection with the three dummy chunks. Safe to run twice."""
     try:
         client.delete_collection(settings.collection)
-    except Exception:  # the collection did not exist yet
-        pass
+    except Exception as exc:  # noqa: BLE001 - delete-if-exists, any failure means it didn't exist
+        logging.getLogger("rahbar.indexer").debug("no existing collection to delete", extra={"error": str(exc)})
     collection = client.create_collection(
         name=settings.collection,
         metadata={"hnsw:space": "cosine", "embed_model": DUMMY_MODEL, "dimension": DUMMY_DIM},

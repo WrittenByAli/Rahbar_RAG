@@ -43,6 +43,11 @@ class Settings:
 
     log_level: str = "INFO"
 
+    # Cache and retrieval tuning (section 3.3)
+    redis_url: str = "redis://redis:6379"
+    relevance_floor: float = 0.3
+    cache_threshold: float = 0.92
+
 
 def get_settings() -> Settings:
     return Settings(
@@ -59,4 +64,7 @@ def get_settings() -> Settings:
         hosted_base_url=os.environ.get("HOSTED_BASE_URL", ""),
         llm_api_key=os.environ.get("LLM_API_KEY", ""),
         log_level=os.environ.get("LOG_LEVEL", "INFO"),
+        redis_url=os.environ.get("REDIS_URL", "redis://redis:6379"),
+        relevance_floor=_float("RELEVANCE_FLOOR", 0.3),
+        cache_threshold=_float("CACHE_THRESHOLD", 0.92),
     )

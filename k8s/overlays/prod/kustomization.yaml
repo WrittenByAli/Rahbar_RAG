@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+patches:
+  - patch: |-
+      - op: replace
+        path: /data/RETRIEVER
+        value: chroma
+      - op: replace
+        path: /data/LLM_PROVIDER
+        value: ollama-host
+      - op: replace
+        path: /data/EMBED_MODEL
+        value: nomic-embed-text
+    target:
+      kind: ConfigMap
+      name: rahbar-config

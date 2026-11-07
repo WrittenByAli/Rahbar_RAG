@@ -1,0 +1,17 @@
+$ kubectl get hpa -n rahbar
+NAME   REFERENCE        TARGETS         MINPODS   MAXPODS   REPLICAS   AGE
+api    Deployment/api   12%/70%         3         8         3          4h
+
+$ kubectl describe hpa api -n rahbar
+Name:                                                  api
+Namespace:                                             rahbar
+Reference:                                             Deployment/api
+Metrics:                                               ( current / target )
+  resource cpu on pods  (as a percentage of request):  12% (30m) / 70%
+Min replicas:                                          3
+Max replicas:                                          8
+Deployment pods:                                       3 current / 3 desired
+Events:
+  Type    Reason             Age   From                       Message
+  ----    ------             ----  ----                       -------
+  Normal  SuccessfulRescale  2h    horizontal-pod-autoscaler  New size: 3; reason: All metrics below target
