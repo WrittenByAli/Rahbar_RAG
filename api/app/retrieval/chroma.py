@@ -41,12 +41,14 @@ class ChromaRetriever:
                 score = 1.0 - distance
                 meta = results["metadatas"][0][i] if results["metadatas"] else {}
                 text = results["documents"][0][i] if results["documents"] else ""
+                raw_page = meta.get("page")
+                page = int(raw_page) if isinstance(raw_page, (int, float)) and not isinstance(raw_page, bool) else None
                 passages.append(Passage(
                     chunk_id=chunk_id,
-                    text=text,
-                    source=meta.get("source", ""),
-                    section=meta.get("section", ""),
-                    page=meta.get("page"),
+                    text=str(text),
+                    source=str(meta.get("source", "")),
+                    section=str(meta.get("section", "")),
+                    page=page,
                     score=score,
                 ))
         return passages
