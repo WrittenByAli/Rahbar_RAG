@@ -15,7 +15,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r api/requirements.txt -r indexer/requirements.txt pytest
-      - run: pytest api/tests/ indexer/tests/ -v
+      - run: cd api && pytest -v
+      - run: cd indexer && pytest -v
 
   scan:
     runs-on: ubuntu-latest
@@ -25,8 +26,9 @@ jobs:
       - uses: actions/checkout@v4
       - run: docker build -t rahbar-api:${{ github.sha }} -f api/Dockerfile api/
       - name: Trivy scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.33.1
         with:
+          version: v0.76.2
           image-ref: rahbar-api:${{ github.sha }}
           severity: CRITICAL,HIGH
           exit-code: "0"
