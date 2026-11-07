@@ -31,7 +31,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r api/requirements.txt -r indexer/requirements.txt pytest
-      - run: pytest api/tests/ indexer/tests/ -v
+      - run: cd api && pytest -v
+      - run: cd indexer && pytest -v
 
   build:
     runs-on: ubuntu-latest
