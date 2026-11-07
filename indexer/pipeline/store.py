@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from .config import IndexerSettings
@@ -26,8 +27,8 @@ def store(chunks: list[Chunk], vectors: list[list[float]], settings: IndexerSett
 
     try:
         client.delete_collection(settings.collection)
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - delete-if-exists, any failure means it didn't exist
+        logging.getLogger("rahbar.indexer").debug("no existing collection to delete", extra={"error": str(exc)})
 
     collection = client.create_collection(
         name=settings.collection,

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Score a running RAHBAR against a golden set, and gate CI on the result (section 5).
 
     python eval/run_eval.py --api http://<ingress>                 # your corpus

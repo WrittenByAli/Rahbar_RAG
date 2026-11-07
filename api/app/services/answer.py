@@ -28,7 +28,7 @@ def answer_question(
             if cached is not None:
                 log.info("cache hit", extra={"question": question[:60]})
                 return cached
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - cache is best-effort, must never break answering
             log.warning("cache unavailable", extra={"error": str(exc)})
 
     # Step 2: Retrieve passages
@@ -90,7 +90,7 @@ def answer_question(
     if cache and answer.answered_from_context:
         try:
             cache.put(question, resp)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - cache is best-effort, must never break answering
             log.warning("cache store failed", extra={"error": str(exc)})
 
     # Step 8: Return

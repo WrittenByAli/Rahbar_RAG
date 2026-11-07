@@ -66,7 +66,6 @@ def test_metrics_count_requests_by_route(client: TestClient) -> None:
 def test_abstention_when_no_passages(client: TestClient) -> None:
     """Stub provider with zero passages returns answered_from_context=False."""
     from app.providers.llm.stub import StubProvider
-    from app.schemas import Answer
 
     answer = StubProvider().generate("anything", [])
     assert answer.answered_from_context is False

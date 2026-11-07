@@ -45,7 +45,7 @@ def readyz(request: Request, response: Response) -> dict[str, object]:
             response.status_code = 503
             return {"status": "not ready", "error": f"embed_model mismatch: stored={stored_model} api={settings.embed_model}", "checks": checks}
         checks["embed_model"] = "ok"
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - any chromadb failure means "not ready"
         checks["chroma"] = str(exc)
         response.status_code = 503
         return {"status": "not ready", "checks": checks}
@@ -56,7 +56,7 @@ def readyz(request: Request, response: Response) -> dict[str, object]:
         r = redis.Redis.from_url(settings.redis_url)
         r.ping()
         checks["redis"] = "ok"
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - any redis failure means "not ready"
         checks["redis"] = str(exc)
         response.status_code = 503
         return {"status": "not ready", "checks": checks}

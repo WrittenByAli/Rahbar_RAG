@@ -47,7 +47,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             stored = col.metadata.get("embed_model", "")
             if stored and stored != settings.embed_model:
                 log.error("embed_model mismatch", extra={"stored": stored, "configured": settings.embed_model})
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - any chromadb/network failure must not block startup
             log.warning("chroma not reachable at startup", extra={"error": str(exc)})
             app.state.collection_meta = {}
     else:
