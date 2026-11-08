@@ -1,0 +1,30 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+patches:
+  - patch: |-
+      - op: replace
+        path: /data/RETRIEVER
+        value: chroma
+      - op: replace
+        path: /data/LLM_PROVIDER
+        value: ollama-host
+      - op: replace
+        path: /data/EMBED_MODEL
+        value: nomic-embed-text
+      - op: replace
+        path: /data/RELEVANCE_FLOOR
+        value: "0.55"
+      - op: replace
+        path: /data/LLM_MODEL
+        value: qwen2.5:3b
+    target:
+      kind: ConfigMap
+      name: rahbar-config
+  - patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/args
+    target:
+      kind: Job
+      name: indexer-initial
