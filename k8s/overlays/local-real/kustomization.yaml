@@ -28,3 +28,30 @@ patches:
     target:
       kind: Job
       name: indexer-initial
+  # local-dev only: also accept Host "localhost" so a browser can reach the stack
+  # via `kubectl port-forward svc/ingress-nginx-controller` without editing /etc/hosts.
+  # base keeps host rahbar.local untouched.
+  - patch: |-
+      - op: add
+        path: /spec/rules/-
+        value:
+          host: localhost
+          http:
+            paths:
+              - path: /api
+                pathType: Prefix
+                backend:
+                  service:
+                    name: api
+                    port:
+                      number: 80
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: ui
+                    port:
+                      number: 80
+    target:
+      kind: Ingress
+      name: rahbar
