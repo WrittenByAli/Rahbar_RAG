@@ -157,7 +157,16 @@ jobs:
                   - {name: tmp, emptyDir: {}}
                   - {name: corpus, configMap: {name: fixture-corpus}}
           EOF
-          kubectl wait --for=condition=complete job/indexer-e2e -n rahbar --timeout=180s
+          if ! kubectl wait --for=condition=complete job/indexer-e2e -n rahbar --timeout=180s; then
+            echo "::group::Diagnostics: indexer-e2e did not complete"
+            kubectl get pods -n rahbar -o wide
+            kubectl describe job/indexer-e2e -n rahbar
+            kubectl logs -n rahbar -l job-name=indexer-e2e --all-containers --prefix --tail=-1 || true
+            echo "--- chroma logs ---"
+            kubectl logs -n rahbar -l app=chroma --tail=-1 || true
+            echo "::endgroup::"
+            exit 1
+          fi
       - name: Wait for API readiness against the real index
         run: kubectl wait --for=condition=available deployment/api -n rahbar --timeout=180s
       - name: Run eval
