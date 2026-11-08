@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
 import httpx
@@ -29,11 +30,24 @@ class OllamaProvider:
         for i, p in enumerate(passages, 1):
             evidence_lines.append(f"[{i}] {p.source} § {p.section}: {p.text}")
         evidence = "\n".join(evidence_lines)
-        schema = Answer.model_json_schema()
+        # json.dumps, not str(): an f-strung Python dict renders single-quoted
+        # True/False/None, which is not valid JSON and confuses smaller models
+        # about the expected structure (observed: citations came back as plain
+        # strings instead of {source, section, page} objects). A concrete
+        # example of the nested shape fixes that ambiguity directly.
+        schema = json.dumps(Answer.model_json_schema(), indent=2)
+        example = json.dumps({
+            "reasoning": "one sentence citing which evidence item answers this",
+            "answer": "the answer in plain text",
+            "citations": [{"source": "example.pdf", "section": "1.1 Example", "page": 1}],
+            "answered_from_context": True,
+            "confidence": "high",
+        }, indent=2)
         return (
             f"Evidence:\n{evidence}\n\n"
             f"Question: {question}\n\n"
-            f"Respond with valid JSON matching this schema:\n{schema}"
+            f"Respond with valid JSON matching this schema:\n{schema}\n\n"
+            f"Example of the expected shape (citations is a list of objects, not strings):\n{example}"
         )
 
     def generate(self, question: str, passages: list[Passage]) -> Answer:
@@ -44,7 +58,12 @@ class OllamaProvider:
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
-            "format": "json",
+            # "format": "json" omitted deliberately: Ollama's grammar-constrained JSON
+            # decoding crashes (500, no error body) partway through generation (~380
+            # tokens in) with this model on longer, real-evidence prompts - confirmed
+            # reproducible by sending the identical request with and without this field.
+            # The prompt's own JSON-schema instruction plus Pydantic validation + retry
+            # below is the actual enforcement layer; see docs/FAILURE-ANALYSIS.md.
             "stream": False,
             "options": {"temperature": self.settings.temperature},
         }
