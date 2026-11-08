@@ -1,17 +1,30 @@
+# Real output captured from the live minikube cluster on 2026-11-08T10:21:28Z
 $ kubectl get hpa -n rahbar
-NAME   REFERENCE        TARGETS         MINPODS   MAXPODS   REPLICAS   AGE
-api    Deployment/api   12%/70%         3         8         3          4h
+NAME      REFERENCE        TARGETS       MINPODS   MAXPODS   REPLICAS   AGE
+api-hpa   Deployment/api   cpu: 4%/70%   3         8         3          12h
 
-$ kubectl describe hpa api -n rahbar
-Name:                                                  api
+$ kubectl describe hpa api-hpa -n rahbar
+Name:                                                  api-hpa
 Namespace:                                             rahbar
+Labels:                                                <none>
+Annotations:                                           <none>
+CreationTimestamp:                                     Sun, 08 Nov 2026 02:38:31 +0500
 Reference:                                             Deployment/api
 Metrics:                                               ( current / target )
-  resource cpu on pods  (as a percentage of request):  12% (30m) / 70%
+  resource cpu on pods  (as a percentage of request):  4% (10m) / 70%
 Min replicas:                                          3
 Max replicas:                                          8
 Deployment pods:                                       3 current / 3 desired
+Conditions:
+  Type            Status  Reason               Message
+  ----            ------  ------               -------
+  AbleToScale     True    ScaleDownStabilized  recent recommendations were higher than current one, applying the highest recent recommendation
+  ScalingActive   True    ValidMetricFound     the HPA was able to successfully calculate a replica count from cpu resource utilization (percentage of request)
+  ScalingLimited  False   DesiredWithinRange   the desired count is within the acceptable range
 Events:
-  Type    Reason             Age   From                       Message
-  ----    ------             ----  ----                       -------
-  Normal  SuccessfulRescale  2h    horizontal-pod-autoscaler  New size: 3; reason: All metrics below target
+  Type     Reason                        Age                   From                       Message
+  ----     ------                        ----                  ----                       -------
+  Warning  FailedComputeMetricsReplicas  12h (x4 over 12h)     horizontal-pod-autoscaler  invalid metrics (1 invalid out of 1), first error is: failed to get cpu resource metric value: failed to get cpu utilization: unable to get metrics for resource cpu: no metrics returned from resource metrics API
+  Warning  FailedGetResourceMetric       20m (x13 over 12h)    horizontal-pod-autoscaler  failed to get cpu utilization: unable to get metrics for resource cpu: no metrics returned from resource metrics API
+  Warning  FailedGetResourceMetric       4m46s (x32 over 12h)  horizontal-pod-autoscaler  failed to get cpu utilization: did not receive metrics for targeted pods (pods might be unready)
+  Warning  FailedComputeMetricsReplicas  4m46s (x32 over 12h)  horizontal-pod-autoscaler  invalid metrics (1 invalid out of 1), first error is: failed to get cpu resource metric value: failed to get cpu utilization: did not receive metrics for targeted pods (pods might be unready)
