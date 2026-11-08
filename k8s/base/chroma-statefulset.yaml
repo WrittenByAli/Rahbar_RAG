@@ -15,6 +15,11 @@ spec:
         app: chroma
     spec:
       automountServiceAccountToken: false
+      # Kubernetes auto-injects CHROMA_PORT=tcp://<clusterIP>:8000 (Docker-link style,
+      # from the "chroma" Service name) into every pod in this namespace. Chroma's own
+      # server reads a CHROMA_PORT env var expecting a bare port number and panics on
+      # the injected URL form, so service-link injection must be disabled here.
+      enableServiceLinks: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
