@@ -84,6 +84,23 @@ def _split_into_sections(doc: Document) -> list[tuple[str, str, int]]:
     return sections
 
 
+_NUMBERED_CLAUSE = re.compile(r"^(\d+(?:\.\d+)*)\s+([A-Z][A-Za-z].{2,78})$")
+
+
+def _looks_like_table_row(stripped: str) -> bool:
+    """Reject ALL-CAPS lines that are table rows or datelines, not real
+    headings: checkbox columns ("X X X X"), single-letter column codes
+    ("A B C"), or lines that are mostly digits/punctuation."""
+    tokens = stripped.split()
+    single_char_tokens = sum(1 for t in tokens if len(t) == 1 and t.isalpha())
+    if single_char_tokens >= 2:
+        return True
+    digit_chars = sum(1 for ch in stripped if ch.isdigit())
+    if digit_chars / max(len(stripped), 1) > 0.3:
+        return True
+    return False
+
+
 def _extract_heading(line: str) -> str | None:
     stripped = line.strip()
     if not stripped:
@@ -91,12 +108,18 @@ def _extract_heading(line: str) -> str | None:
     match = re.match(r"^(#{1,4})\s+(.+)$", stripped)
     if match:
         return match.group(2).strip()
+    # Numbered clauses, e.g. "1.21 Attendance": the real heading style FAST-NUCES
+    # PDFs use, which the ALL-CAPS check below never catches.
+    clause = _NUMBERED_CLAUSE.match(stripped)
+    if clause and not _looks_like_table_row(stripped):
+        return stripped
     if (
         len(stripped) < 80
         and stripped == stripped.upper()
         and len(stripped.split()) >= 2
         and not stripped.startswith("|")
         and re.search(r"[A-Z]", stripped)
+        and not _looks_like_table_row(stripped)
     ):
         return stripped
     return None

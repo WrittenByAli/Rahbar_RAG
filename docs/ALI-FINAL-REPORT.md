@@ -125,6 +125,42 @@ real corpus. No critical/high findings remain unresolved in Ali's lane.
 - Handoffs to Shahzad: (a) set `RELEVANCE_FLOOR=0.55` in the ConfigMap; (b) remove `|| true`
   from the e2e eval step and feed it real embeddings; (c) the cluster evidence files.
 
+## 12b. Live cluster run (2026-11-08 update — supersedes the BLOCKED items above)
+
+After the initial report, Docker Desktop was started and minikube installed, so the full
+stack was brought up on a real local Kubernetes cluster and the previously-BLOCKED items were
+done for real:
+
+- **Cluster:** `minikube start --driver=docker --cni=calico`, metrics-server + ingress addons,
+  all three images built and `minikube image load`ed.
+- **Real indexer Job (no `--dummy`):** extract → OCR → clean → chunk → embed → store, **372
+  real chunks across all 9 documents in 99s**, including OCR on the scanned 8-page policy
+  (`docs/evidence/indexer-run.txt`).
+- **`/readyz` green:** `{"chroma":"ok (372 chunks)","embed_model":"ok","redis":"ok"}`.
+- **Real grounded answers** through the live API with real `nomic-embed-text` retrieval and
+  real `qwen2.5:3b` generation on the GPU: attendance → "80%", fee → "Rs. 12,000", 2026 CGPA
+  warning → "2.00" (all `answered_from_context: true`); hostel question → correctly **declined**.
+- **Real evidence captured** (replacing the earlier fabricated placeholders):
+  `docs/evidence/kubectl-top.txt`, `get-hpa.txt` (`cpu: 4%/70%` — real, and a live example of
+  why CPU is the wrong signal for an I/O-bound RAG service), `get-endpoints.txt` (3 real api
+  endpoints), `indexer-run.txt`, `embed-pin-mismatch.txt`.
+- **Embedding-pin demo (§4.4):** changed `EMBED_MODEL` to a mismatching value without
+  re-indexing → the new pod sat `0/1 READY`, `/readyz` returned **503
+  `embed_model mismatch: stored=nomic-embed-text api=bge-small-en`**, and `maxUnavailable:0`
+  kept the old matching pods serving. Reverted afterward.
+- **Real rollouts** via `kubectl rollout restart` + `rollout status` (§4.6) happened multiple
+  times during debugging.
+
+Two real deployment bugs were found and fixed in the process (infra lane — flagged to Shahzad
+for review): a missing `allow-indexer` NetworkPolicy (default-deny blocked the indexer's DNS),
+and a Kubernetes service-link env var colliding with Chroma's `CHROMA_PORT` config
+(`enableServiceLinks: false`). Plus two app-lane generation bugs: Ollama's `format:json`
+grammar crashing mid-generation, and the prompt sending the schema as a Python dict rather
+than JSON. All five are written up in `docs/FAILURE-ANALYSIS.md`.
+
+Still genuinely not done here: Docker Hub push + CD deploy (no registry creds), and the
+GitHub screenshots (`branch-protection.png`, `blocked-merge.png`).
+
 ## 12. Remaining issues (honest)
 
 1. `eval/golden.yaml` full-corpus labels are placeholders → committed baseline is fixture-scoped.
