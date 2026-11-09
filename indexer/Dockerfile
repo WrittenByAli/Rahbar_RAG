@@ -20,4 +20,9 @@ COPY pipeline/ pipeline/
 
 USER app
 
-CMD ["python", "-m", "pipeline.run"]
+# ENTRYPOINT, not CMD: indexer-job.yaml sets `args: ["--dummy"]`. Kubernetes
+# `args` replaces CMD but APPENDS to ENTRYPOINT - with CMD here, that args
+# field previously replaced the whole command, so the container tried to
+# exec the literal string "--dummy" and failed with "executable file not
+# found in $PATH". ENTRYPOINT makes --dummy arrive as a real argument.
+ENTRYPOINT ["python", "-m", "pipeline.run"]
