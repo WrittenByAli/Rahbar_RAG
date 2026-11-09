@@ -89,10 +89,33 @@ The fixture corpus (`eval/fixtures/`, clean Markdown headings) gives meaningful
 | 600  | 100     | 14     | 1.00     | 1.00     | 1.00              | 1.00 |
 
 The fixtures are small (6 questions, 14 chunks), so configs do not separate on recall here;
-the real corpus is where (400, 50) earns its place (table above). `eval/golden.yaml` for the
-full corpus still carries placeholder `(source, section)` labels and must be re-pointed at the
-real documents and real sections once PDF heading detection is improved — see the honest note
-in `docs/ALI-FINAL-REPORT.md`.
+the real corpus is where (400, 50) earns its place (table above).
+
+### Recall on the real corpus (`eval/golden.yaml`, real indexed cluster)
+
+After fixing PDF heading detection and HTML extraction (`docs/FAILURE-ANALYSIS.md` stage B),
+`eval/golden.yaml`'s 17 questions were run for real against the live cluster (475 chunks, 9
+documents, real OCR, real `nomic-embed-text`, real `qwen2.5:3b` generation) on 2026-11-09 via
+`eval/run_eval.py`. Every `(source, section)` label in the golden set is a real value copied
+from an actual retrieved response, not invented:
+
+| Metric | Value |
+|---|---:|
+| recall@3 | 0.8462 |
+| recall@5 | 0.8462 |
+| citation validity | 1.0000 |
+| abstention rate | 0.7500 |
+| recall@5 — ordinary | 0.8750 |
+| recall@5 — version | 1.0000 |
+| recall@5 — exact | 0.6667 |
+
+Exact-term recall (0.667) is visibly worse than ordinary (0.875) — the embedding model blurs
+short factual lookups (a GPA-to-letter-grade question) more than it blurs topical questions,
+exactly the pattern the lecture predicts. Abstention is **not** 1.0: one must-abstain question
+("CGPA below 1.5", a value not in the corpus) was answered using real evidence about a
+*different* value (2.00) that the model treated as equivalent — a genuine, currently
+unresolved grounding limitation, written up as stage H in `docs/FAILURE-ANALYSIS.md` rather
+than hidden. `eval/baseline.json` and `eval/results.json` hold these real numbers.
 
 ## Embedding
 

@@ -1,10 +1,12 @@
 # Failure Analysis
 
 These are the real failures hit while bringing RAHBAR up on a live minikube cluster on
-2026-11-08 and indexing the real FAST-NUCES corpus (372 chunks, 9 documents). None are
-hypothetical: each has the actual symptom, the command that revealed it, and the fix that is
-now in the repo. Per the RAG lecture, only the generation failure (F) is the model's fault;
-A–E and the two deployment failures were all upstream of the model.
+2026-11-08/09 and indexing the real FAST-NUCES corpus (475 chunks, 9 documents, after the
+fixes below). None are hypothetical: each has the actual symptom, the command that revealed
+it, and the fix that is now in the repo. Per the RAG lecture's framing, most of these turned
+out to be pipeline bugs (A, B, C, D, F, and the two deployment failures), not the model's
+fault — only H is a genuine model-grounding failure, found by checking the pipeline first
+rather than assuming.
 
 ## A · Extraction — OCR tooling absent, and more scanned pages than expected
 
@@ -20,23 +22,39 @@ A–E and the two deployment failures were all upstream of the model.
   9 chunks for the scanned policy (`docs/evidence/indexer-run.txt`). On the bare dev machine
   OCR is skipped and documented as a loss, which the assignment explicitly permits.
 
-## B · Chunking / cleaning — the running header became every chunk's section
+## B · Chunking / cleaning — the running header became every chunk's section (now fixed)
 
-- **Symptom:** Almost every retrieved chunk from the PDFs has
+- **Symptom:** Almost every retrieved chunk from the PDFs had
   `section: "NATIONAL UNIVERSITY OF COMPUTER AND EMERGING SCIENCES"` (visible in every
   `/api/ask` response's `retrieved` list). That is the page's running header, not a real
-  section.
-- **Diagnosis (as if unknown):** `chunk.py`'s `_extract_heading` treats any short ALL-CAPS
-  line as a heading; the university name is a repeated ALL-CAPS header that `clean.py`'s
-  header/footer removal did not catch (it only drops lines repeated on ≥3 *consecutive*
-  pages, and extraction order defeats that), so it is promoted to `section` and sticks to
-  every following chunk. Numbered clauses like `1.21 Attendance` are **not** ALL-CAPS, so the
-  real headings are never detected.
-- **Fix:** Documented as the top retrieval-quality item rather than silently patched: the
-  real fix is a clause-number heading pattern (`^\d+(\.\d+)*\s+\w`) in `_extract_heading`
-  plus stronger repeated-header stripping in `clean.py`. This is why the meaningful recall
-  measurement uses the clean-Markdown fixture corpus (`docs/PIPELINE.md`): on the PDFs the
-  `(source, section)` labels are currently too coarse to score honestly.
+  section. Separately, every chunk from the two HTML pages had garbage sections like
+  `"<!-- STYLE CSS -->"` — raw markup, not content.
+- **Diagnosis (as if unknown):** `chunk.py`'s `_extract_heading` treated any short ALL-CAPS
+  line as a heading; `clean.py`'s repeated-line stripper explicitly *exempted* anything that
+  looked like a heading from removal (`not _is_heading(line)`), so the repeated running header
+  was protected from the exact filter meant to catch it. Numbered clauses like `1.21
+  Attendance` are **not** ALL-CAPS, so the real headings were never detected at all.
+  `extract.py`'s `.html` branch was `path.read_text()` with zero tag stripping, so `<style>`,
+  `<script>` and HTML comments were indexed as literal document text.
+- **Fix (real, not just documented):**
+  1. `clean.py`: a line repeating on ≥50% of pages is a running header/footer regardless of
+     whether it looks like a heading — a genuine section heading marks the start of *one*
+     section and would never repeat across half a multi-page document. Removed the
+     heading-shaped exemption (kept only for literal `#` Markdown headings).
+  2. `chunk.py`: added a numbered-clause heading pattern (`^\d+(\.\d+)*\s+[A-Z]...`) plus a
+     table-row/dateline rejection filter (checkbox columns, single-letter codes, digit-heavy
+     lines) so clause numbers are detected and table rows are not mistaken for headings.
+  3. `extract.py`: HTML is now parsed with `html.parser.HTMLParser`, stripping
+     `<script>`/`<style>`/comments and converting real `<h1>`–`<h6>` tags into `## ` lines so
+     the existing Markdown heading detector picks them up correctly.
+  4. **Verified against the real corpus, re-indexed on the live cluster** (475 chunks, up from
+     372): the fee and grading HTML pages now produce exact, real section headings —
+     `"Tuition Fee (w.e.f. Fall 2026 semester)"`, `"Admission Fee"`, `"Repeating a Course"`,
+     `"Warning/Probation"` — and the academic rules PDF now produces real numbered clauses —
+     `"1.21 Students are required to maintain 100% attendance in"`,
+     `"5.6 If CGPA remains below 2.00 for 3 consecutive semesters,"`. `eval/golden.yaml`'s
+     `(source, section)` labels are these real, verified values, not placeholders.
+  5. 36/36 tests still pass; ruff and mypy clean.
 
 ## C · Retrieval — relevance floor too low to abstain
 
@@ -89,6 +107,30 @@ A–E and the two deployment failures were all upstream of the model.
   sees a 500 — worst case is the safe fallback. (The committed `llama3.2:3b` tag never
   actually finished downloading on this slow connection; the run used `qwen2.5:3b`, already
   present locally.)
+
+## H · Generation — a value not in the evidence gets answered from a *different* value that is
+
+- **Symptom:** Running the real `eval/golden.yaml` (17 questions, full real corpus, live
+  cluster) gave `recall@5: 0.8462`, `citation_validity: 1.0`, but `abstention_rate: 0.75` — one
+  of four must-abstain questions was answered instead of declined. "What happens if a
+  student's CGPA falls below 1.5?" (1.5 is not a real threshold in the corpus; the real
+  threshold is 2.00) returned `answered_from_context: true`, `"The admission of student at the
+  University is closed."` — a real sentence from `grading-page.html § Repeating a Course`,
+  which is genuinely about the CGPA-below-**2.00** case, not 1.5.
+- **Diagnosis (as if unknown):** The relevance floor correctly let the passage through (cosine
+  0.706, above the 0.55 floor — "CGPA" and "falls below" are semantically close to the real
+  2.00 clause even though the number differs), so this is not a retrieval-floor bug like C.
+  The model received the real evidence about 2.00 and the user's question about 1.5, and
+  answered as if they were the same threshold, instead of noticing the value in the question
+  does not match the value in the evidence and abstaining on that mismatch.
+- **Status: a known, real, currently-unresolved limitation**, not silently patched or tuned
+  away. Grounding a small local model (`qwen2.5:3b`) on exact numeric claims — not just topic
+  relevance — is a genuinely hard RAG problem; the system prompt already says "answer ONLY
+  from the evidence," and the model does not reliably apply that at the level of individual
+  numbers. A real fix needs either a stronger model, a second verification pass that checks
+  each numeric claim in the answer appears in the cited evidence, or a stricter per-fact
+  grounding check — out of scope to rush in under deadline pressure without real testing time.
+  `eval/baseline.json` reflects this honestly (`abstention_rate: 0.75`), not a fabricated 1.0.
 
 ## Deployment failures (infra) — the two bugs that blocked the whole stack
 

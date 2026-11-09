@@ -1,16 +1,13 @@
 {
-  "recall@3": 1.0,
-  "recall@5": 1.0,
+  "recall@3": 0.8462,
+  "recall@5": 0.8462,
   "citation_validity": 1.0,
-  "abstention_rate": 1.0,
+  "abstention_rate": 0.75,
   "recall@5_by_type": {
-    "ordinary": 1.0,
+    "ordinary": 0.875,
     "version": 1.0,
-    "exact": 1.0,
-    "injection": 1.0
+    "exact": 0.6667
   },
-  "golden": "eval/fixtures/golden.fixture.yaml",
-  "questions": 6,
-  "chunks": 14,
-  "method": "offline: real chunk + real nomic-embed-text + brute-force cosine + StubProvider"
+  "golden": "eval/golden.yaml",
+  "questions": 17
 }
