@@ -35,17 +35,16 @@ REPO = HERE.parent
 sys.path.insert(0, str(REPO / "indexer"))
 sys.path.insert(0, str(REPO / "api"))
 
-from app.config import Settings  # noqa: E402
-from app.providers.llm.stub import StubProvider  # noqa: E402
-from app.schemas import Passage  # noqa: E402
-from app.services.answer import answer_question  # noqa: E402
-from pipeline.chunk import chunk as chunk_doc  # noqa: E402
-from pipeline.clean import clean  # noqa: E402
-from pipeline.config import IndexerSettings  # noqa: E402
-from pipeline.embed import embed  # noqa: E402
-from pipeline.extract import extract  # noqa: E402
-
-from run_eval import summarise  # noqa: E402
+from app.config import Settings
+from app.providers.llm.stub import StubProvider
+from app.schemas import Passage
+from app.services.answer import answer_question
+from pipeline.chunk import chunk as chunk_doc
+from pipeline.clean import clean
+from pipeline.config import IndexerSettings
+from pipeline.embed import embed
+from pipeline.extract import extract
+from run_eval import summarise
 
 OLLAMA_URL = "http://127.0.0.1:11434"
 EMBED_MODEL = "nomic-embed-text"

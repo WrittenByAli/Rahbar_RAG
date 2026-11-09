@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 from fastapi.testclient import TestClient
@@ -56,7 +56,7 @@ class FakeResponse:
 
 
 def _settings(**overrides: Any) -> Settings:
-    base: dict[str, Any] = dict(retriever="chroma", embed_model="nomic-embed-text")
+    base: dict[str, Any] = {"retriever": "chroma", "embed_model": "nomic-embed-text"}
     base.update(overrides)
     return Settings(**base)
 
@@ -255,7 +255,7 @@ def test_hosted_falls_back_on_http_error(monkeypatch: pytest.MonkeyPatch) -> Non
 # --------------------------------------------------------------------------- #
 def _readyz_client(monkeypatch: pytest.MonkeyPatch, stored_model: str, count: int = 5) -> TestClient:
     class FakeCollection:
-        metadata = {"embed_model": stored_model}
+        metadata: ClassVar[dict[str, Any]] = {"embed_model": stored_model}
 
         def count(self) -> int:
             return count
