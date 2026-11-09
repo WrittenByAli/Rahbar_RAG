@@ -50,18 +50,19 @@ def _find_repeated_lines(pages: list[Page]) -> set[str]:
             if stripped:
                 tail_counter[stripped] += 1
 
+    # A line repeating on >=50% of pages is a running header/footer, full stop -
+    # a genuine section heading marks the start of ONE section and would never
+    # repeat across half a multi-page document. Markdown headings ("#...") are
+    # the one exception: those come from the fixture corpus's front matter-style
+    # structure, not from a scanned/printed running header, so they're protected.
     repeated: set[str] = set()
     for line, count in head_counter.items():
-        if count >= threshold and not _is_heading(line):
+        if count >= threshold and not line.startswith("#"):
             repeated.add(line)
     for line, count in tail_counter.items():
-        if count >= threshold and not _is_heading(line):
+        if count >= threshold and not line.startswith("#"):
             repeated.add(line)
     return repeated
-
-
-def _is_heading(line: str) -> bool:
-    return line.startswith("#") or (len(line) < 80 and line == line.upper() and len(line.split()) > 1)
 
 
 def _is_table_line(line: str) -> bool:
