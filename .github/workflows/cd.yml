@@ -80,8 +80,61 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - name: Deploy to production
+      # This student project has no persistent, internet-reachable production
+      # cluster for a cloud runner to reach - `kubectl apply` with no cluster
+      # context just fails dialing localhost:8080. An ephemeral kind cluster,
+      # deploying the images just pushed to Docker Hub by their real tag, is the
+      # honest stand-in: it proves the images that were just published actually
+      # roll out and come up healthy, not a fabricated "it's running somewhere".
+      - name: Create kind cluster
+        uses: helm/kind-action@v1.10.0
+        with:
+          cluster_name: kind
+      - name: Deploy the published images to kind
         run: |
-          kubectl apply -k k8s/overlays/prod/
-          kubectl rollout status deployment/api -n rahbar --timeout=120s
-          kubectl rollout status deployment/ui -n rahbar --timeout=120s
+          kubectl kustomize k8s/overlays/prod/ | sed \
+            "s|rahbar-api:dev|${{ secrets.DOCKERHUB_USERNAME }}/rahbar-api:${{ github.sha }}|g; \
+             s|rahbar-indexer:dev|${{ secrets.DOCKERHUB_USERNAME }}/rahbar-indexer:${{ github.sha }}|g; \
+             s|rahbar-ui:dev|${{ secrets.DOCKERHUB_USERNAME }}/rahbar-ui:${{ github.sha }}|g" \
+            | kubectl apply -f -
+          kubectl create secret generic rahbar-secret -n rahbar --from-literal=LLM_API_KEY=unused --dry-run=client -o yaml | kubectl apply -f -
+          kubectl wait --for=condition=ready pod -l app=chroma -n rahbar --timeout=120s
+      - name: Run the indexer (dummy mode, matching the documented week-1 bootstrap)
+        run: |
+          # /readyz needs a non-empty collection whose pinned embed_model matches the
+          # API's. The prod ConfigMap is pinned to nomic-embed-text for real traffic,
+          # but this job never runs a real embedding model - so, exactly as the
+          # project's own week-1 bootstrap procedure documents, pin EMBED_MODEL to
+          # dummy-768 for this smoke test and let the Job's default --dummy args write
+          # 3 fake chunks under that same pin. This is the intended way to prove the
+          # Job -> StatefulSet -> Service -> probes -> Ingress chain without a model.
+          kubectl patch configmap rahbar-config -n rahbar --type merge -p '{"data":{"EMBED_MODEL":"dummy-768"}}'
+          kubectl delete job indexer-initial -n rahbar --ignore-not-found
+          kubectl kustomize k8s/overlays/prod/ | sed \
+            "s|rahbar-api:dev|${{ secrets.DOCKERHUB_USERNAME }}/rahbar-api:${{ github.sha }}|g; \
+             s|rahbar-indexer:dev|${{ secrets.DOCKERHUB_USERNAME }}/rahbar-indexer:${{ github.sha }}|g; \
+             s|rahbar-ui:dev|${{ secrets.DOCKERHUB_USERNAME }}/rahbar-ui:${{ github.sha }}|g" \
+            | kubectl apply -f -
+          if ! kubectl wait --for=condition=complete job/indexer-initial -n rahbar --timeout=120s; then
+            echo "::group::Diagnostics: indexer-initial did not complete"
+            kubectl get pods -n rahbar -o wide
+            kubectl describe job/indexer-initial -n rahbar
+            kubectl logs -n rahbar -l job-name=indexer-initial --all-containers --prefix --tail=-1 || true
+            echo "::endgroup::"
+            exit 1
+          fi
+      - name: Roll out api and ui, now that the index exists
+        run: |
+          kubectl rollout restart deployment/api -n rahbar
+          kubectl rollout status deployment/api -n rahbar --timeout=180s
+          kubectl rollout status deployment/ui -n rahbar --timeout=180s
+      - name: Smoke test through the Service
+        run: |
+          kubectl port-forward svc/api 8080:80 -n rahbar >/tmp/port-forward.log 2>&1 &
+          for i in $(seq 1 15); do
+            curl -sf http://localhost:8080/healthz >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -sf http://localhost:8080/healthz
+          echo ""
+          curl -sf http://localhost:8080/readyz
