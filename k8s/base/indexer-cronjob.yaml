@@ -10,12 +10,48 @@ spec:
     spec:
       backoffLimit: 2
       template:
+        metadata:
+          labels:
+            app: indexer
         spec:
           restartPolicy: OnFailure
           automountServiceAccountToken: false
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
+          # Only the indexer writes to Chroma (section 1), but it first needs the real
+          # corpus on disk. The image only ships pipeline/ (no corpus/raw/, which is
+          # gitignored and never built into any image). This init container reuses the
+          # indexer image's own httpx/pyyaml to run the real corpus/fetch.py (packaged as
+          # the corpus-fetch-scripts ConfigMap by `make corpus-scripts`, never duplicated)
+          # into a scratch dir, then copies just the downloaded documents into the
+          # corpus-data volume the main container reads. See docs/adr/0005-corpus-delivery.md.
+          initContainers:
+            - name: fetch-corpus
+              image: rahbar-indexer:dev
+              imagePullPolicy: IfNotPresent
+              command: ["sh", "-c"]
+              args:
+                - |
+                  set -e
+                  cp /scripts/fetch.py /scripts/sources.yaml /tmp/
+                  python /tmp/fetch.py
+                  mkdir -p /corpus
+                  cp -r /tmp/raw/. /corpus/
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              volumeMounts:
+                - name: corpus-scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+                - name: corpus-data
+                  mountPath: /corpus
           containers:
             - name: indexer
               image: rahbar-indexer:dev
@@ -39,6 +75,14 @@ spec:
               volumeMounts:
                 - name: tmp
                   mountPath: /tmp
+                - name: corpus-data
+                  mountPath: /corpus
+                  readOnly: true
           volumes:
             - name: tmp
+              emptyDir: {}
+            - name: corpus-scripts
+              configMap:
+                name: corpus-fetch-scripts
+            - name: corpus-data
               emptyDir: {}

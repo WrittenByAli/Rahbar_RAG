@@ -1,8 +1,9 @@
+# Real output captured from the live minikube cluster on 2026-11-08T10:21:20Z
 $ kubectl top pod -n rahbar
-NAME                     CPU(cores)   MEMORY(bytes)
-api-5f4b8c9d7-2xklm     12m          148Mi
-api-5f4b8c9d7-7nj4p     8m           142Mi
-api-5f4b8c9d7-kw9r2     15m          155Mi
-chroma-0                 45m          487Mi
-redis-6b8f9c4d5-x2m8k   3m           28Mi
-ui-7c9d5e6f8-4rmvn      1m           12Mi
+NAME                     CPU(cores)   MEMORY(bytes)   
+api-86dcf9ff65-h848g     11m          100Mi           
+api-86dcf9ff65-ptwzl     10m          90Mi            
+api-86dcf9ff65-rp5xx     9m           86Mi            
+chroma-0                 6m           667Mi           
+redis-6b486d67cd-p86sv   8m           9Mi             
+ui-797f64485-gtx6x       1m           2Mi             

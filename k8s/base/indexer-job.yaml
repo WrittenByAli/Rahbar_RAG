@@ -6,6 +6,9 @@ metadata:
 spec:
   backoffLimit: 3
   template:
+    metadata:
+      labels:
+        app: indexer
     spec:
       restartPolicy: OnFailure
       automountServiceAccountToken: false

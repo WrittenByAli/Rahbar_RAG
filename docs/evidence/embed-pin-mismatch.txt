@@ -1,0 +1,25 @@
+# Embedding-pin mismatch demo (section 4.4), captured 2026-11-08T10:21:51Z on the live cluster.
+# The index was built with nomic-embed-text. We change the API's EMBED_MODEL to a DIFFERENT value
+# WITHOUT re-indexing. The API must refuse to become ready (503) instead of silently serving garbage.
+
+=== BEFORE: readyz is green ===
+$ curl -s http://<api>/readyz
+{"status":"ready","checks":{"chroma":"ok (372 chunks)","embed_model":"ok","redis":"ok"}}
+
+=== patch EMBED_MODEL to a mismatching value (bge-small-en, NOT re-indexed) ===
+$ kubectl patch configmap rahbar-config -n rahbar -p ...EMBED_MODEL=bge-small-en
+
+=== AFTER restart with mismatched EMBED_MODEL: new pod is 0/1 READY (withheld from Service) ===
+NAME                   READY   STATUS    RESTARTS   AGE
+api-7d89bfb45-nsx7t    0/1     Running   0          51s
+api-86dcf9ff65-h848g   1/1     Running   0          3m58s
+api-86dcf9ff65-ptwzl   1/1     Running   0          3m40s
+api-86dcf9ff65-rp5xx   1/1     Running   0          3m20s
+
+=== that pod's /readyz: 503 naming the conflict ===
+$ kubectl exec api-7d89bfb45-nsx7t -- curl -s -w 'HTTP %{http_code}' localhost:8000/readyz
+{"status":"not ready","error":"embed_model mismatch: stored=nomic-embed-text api=bge-small-en","checks":{"chroma":"ok (372 chunks)","embed_model":"mismatch: stored=nomic-embed-text api=bge-small-en"}}
+HTTP 503
+
+=== maxUnavailable:0 keeps the 3 old (matching) pods in service; the bad rollout cannot proceed ===
+=== REVERTED: EMBED_MODEL back to nomic-embed-text ===

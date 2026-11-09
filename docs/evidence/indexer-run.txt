@@ -1,0 +1,14 @@
+# Real indexer Job run on the live cluster (no --dummy): extract + OCR + chunk + embed + store.
+# Captured 2026-11-08T10:21:41Z. 372 real chunks across 9 documents, incl. OCR on the scanned PDF.
+$ kubectl logs job/indexer-initial -n rahbar
+{"ts": "2026-11-08T09:58:21Z", "logger": "rahbar.indexer", "msg": "indexer starting", "dummy": false, "embed_model": "nomic-embed-text", "collection": "rahbar", "chroma": "chroma:8000", "pod": "indexer-initial-7lsbl"}
+{"ts": "2026-11-08T09:59:10Z", "logger": "rahbar.indexer", "msg": "chunked", "source": "undergraduate-academic-rules-aug-2023.pdf", "chunks": 27}
+{"ts": "2026-11-08T09:59:20Z", "logger": "rahbar.indexer", "msg": "chunked", "source": "academic-rules-handbook-jun-2026.pdf", "chunks": 76}
+{"ts": "2026-11-08T09:59:21Z", "logger": "rahbar.indexer", "msg": "chunked", "source": "prospectus-2026-academic-rules-and-regulations.pdf", "chunks": 10}
+{"ts": "2026-11-08T09:59:30Z", "logger": "rahbar.indexer", "msg": "chunked", "source": "student-handbook-jun-2026.pdf", "chunks": 90}
+{"ts": "2026-11-08T09:59:34Z", "logger": "rahbar.indexer", "msg": "chunked", "source": "annual-report-2019-20.pdf", "chunks": 24}
+{"ts": "2026-11-08T09:59:44Z", "logger": "rahbar.indexer", "msg": "chunked", "source": "annual-report-2023-24.pdf", "chunks": 102}
+{"ts": "2026-11-08T09:59:44Z", "logger": "rahbar.indexer", "msg": "chunked", "source": "fee-structure-page.html", "chunks": 17}
+{"ts": "2026-11-08T09:59:44Z", "logger": "rahbar.indexer", "msg": "chunked", "source": "grading-page.html", "chunks": 17}
+{"ts": "2026-11-08T09:59:54Z", "logger": "rahbar.indexer", "msg": "chunked", "source": "faculty-entrepreneurship-and-technical-start-ups-policy.pdf", "chunks": 9}
+{"ts": "2026-11-08T10:00:01Z", "logger": "rahbar.indexer", "msg": "indexer finished", "chunks": 372, "seconds": 99.2}

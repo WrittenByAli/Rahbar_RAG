@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import math
+from typing import Any
 
 from ..config import Settings
 from ..schemas import AskResponse
@@ -17,7 +18,8 @@ class SemanticCache:
     def __init__(self, settings: Settings) -> None:
         import redis
         self.settings = settings
-        self.redis = redis.Redis.from_url(settings.redis_url, decode_responses=True)
+        # typed loosely: redis-py's overloaded stubs otherwise infer Awaitable here
+        self.redis: Any = redis.Redis.from_url(settings.redis_url, decode_responses=True)
         self.threshold = settings.cache_threshold
 
     def _hash_key(self, question: str) -> str:

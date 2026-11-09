@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
 import httpx
@@ -29,11 +30,20 @@ class HostedProvider:
         for i, p in enumerate(passages, 1):
             evidence_lines.append(f"[{i}] {p.source} § {p.section}: {p.text}")
         evidence = "\n".join(evidence_lines)
-        schema = Answer.model_json_schema()
+        # json.dumps, not str(): see ollama.py's _build_prompt for why.
+        schema = json.dumps(Answer.model_json_schema(), indent=2)
+        example = json.dumps({
+            "reasoning": "one sentence citing which evidence item answers this",
+            "answer": "the answer in plain text",
+            "citations": [{"source": "example.pdf", "section": "1.1 Example", "page": 1}],
+            "answered_from_context": True,
+            "confidence": "high",
+        }, indent=2)
         return (
             f"Evidence:\n{evidence}\n\n"
             f"Question: {question}\n\n"
-            f"Respond with valid JSON matching this schema:\n{schema}"
+            f"Respond with valid JSON matching this schema:\n{schema}\n\n"
+            f"Example of the expected shape (citations is a list of objects, not strings):\n{example}"
         )
 
     def generate(self, question: str, passages: list[Passage]) -> Answer:

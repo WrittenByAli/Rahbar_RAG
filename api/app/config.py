@@ -45,7 +45,9 @@ class Settings:
 
     # Cache and retrieval tuning (section 3.3)
     redis_url: str = "redis://redis:6379"
-    relevance_floor: float = 0.3
+    # measured on the golden set: answerable top-1 scores 0.65-0.78, off-topic 0.50;
+    # 0.55 abstains on out-of-corpus questions with zero false drops (see docs/PIPELINE.md)
+    relevance_floor: float = 0.55
     cache_threshold: float = 0.92
 
 

@@ -1,63 +1,66 @@
 # Corpus
 
-Source: FAST-NUCES public website and institutional documents · Documents: 7 · Pages: ~85
+Source: FAST-NUCES public website (`nu.edu.pk`). Documents: **9** (7 PDF + 2 HTML).
+PDF pages: **279** (plus 2 HTML pages). Fetched on 2026-11-08 with `corpus/fetch.py`; every
+file's URL, byte size and real SHA-256 are recorded in `corpus/MANIFEST.md`. The PDFs are not
+committed (they are third-party; `corpus/raw/` is gitignored) — the manifest and the fetch
+script reproduce them. Page counts and text-layer status below were measured with `pdfplumber`,
+not estimated.
 
-## Document Inventory
+## Document inventory
 
-1. **Academic Rules Handbook 2023** (`Academic_Rules_Handbook_2023.pdf`)
-   - Format: PDF with text layer and tables
-   - Version: 2023, **superseded** by the 2026 edition
-   - Pages: ~18
-   - Properties satisfied: two-version policy pair (older version), tables (grade thresholds, CGPA scales)
-   - Notes: Metadata `superseded: true`, `doc_version: "2023"`. Several tables contain exact CGPA thresholds (e.g., 1.50 for probation, 2.00 for good standing) that differ from the 2026 edition. The indexer marks all chunks from this document as superseded so the retriever filters them out by default.
+1. **Undergraduate Academic Rules (Aug 2023)** — `undergraduate-academic-rules-aug-2023.pdf`,
+   26 pages, `doc_version: 2023-08`, **superseded: true**. The older half of the version pair;
+   all its chunks are marked superseded so the retriever filters them out by default. Contains
+   some image-only pages.
+2. **Academic Rules Handbook (Jun 2026)** — `academic-rules-handbook-jun-2026.pdf`, 58 pages,
+   `2026-06`, current. The current half of the version pair, with numbered clauses (e.g.
+   attendance is clause 1.21). Contains some image-only pages.
+3. **Prospectus 2026 – Academic Rules and Regulations** —
+   `prospectus-2026-academic-rules-and-regulations.pdf`, 5 pages, `2026`, current. The same
+   rules in condensed form with **different clause numbers** (attendance is clause 1 here, 1.21
+   in the handbook) — a version-sensitive and exact-term case.
+4. **Student Handbook (Jun 2026)** — `student-handbook-jun-2026.pdf`, 64 pages, `2026-06`.
+   Long definitions, including a multi-section Generative AI policy a fixed-size chunker would
+   split mid-clause.
+5. **Annual Report 2019-20** — `annual-report-2019-20.pdf`, 33 pages, `2019-20`. Tables of
+   faculty, graduates and publications; part of a versions-over-time set with (6).
+6. **Annual Report 2023-24** — `annual-report-2023-24.pdf`, 85 pages, `2023-24`. Same report,
+   later edition — tables and change over time.
+7. **Fee Structure page** — `fee-structure-page.html`, `2026-27`. HTML tables: tuition per
+   credit hour, miscellaneous fees — exact amounts.
+8. **Grading page** — `grading-page.html`, `2026`. HTML tables: grade points and thresholds.
+9. **Faculty Entrepreneurship and Technical Start-ups Policy** —
+   `faculty-entrepreneurship-and-technical-start-ups-policy.pdf`, 8 pages, `2022-05`.
+   **Fully image-only — no text layer on any page** (confirmed: `extract_text()` empty for all
+   8 pages). This is the OCR document.
 
-2. **Academic Rules Handbook 2026** (`Academic_Rules_Handbook_2026.pdf`)
-   - Format: PDF with text layer and tables
-   - Version: 2026, **current**
-   - Pages: ~20
-   - Properties satisfied: two-version policy pair (current version), tables (updated grade thresholds), exact-term content (course codes like CS1001, CGPA thresholds like 1.70)
-   - Notes: Metadata `superseded: false`, `doc_version: "2026"`. Contains updated probation threshold (1.70 vs. 1.50 in 2023) — this is a version-sensitive test case.
+## The seven required properties, mapped
 
-3. **Fee Schedule 2024** (`Fee_Schedule_2024.pdf`)
-   - Format: PDF with complex tables
-   - Version: 2024, current
-   - Pages: ~8
-   - Properties satisfied: tables with real information (semester fees, lab fees, hostel charges), exact-term content (specific PKR amounts like 185,000/semester)
-   - Notes: Multi-column tables with merged cells. The cleaning stage preserves table structure as pipe-delimited text. Fee amounts serve as exact-match evaluation targets.
+1. **≥6 documents and ≥40 pages** — 9 documents, 279 PDF pages + 2 HTML. ✓
+2. **Two versions of one policy** — Undergraduate Academic Rules 2023 (superseded) vs the 2026
+   Academic Rules Handbook and the 2026 Prospectus. The retriever's `superseded` filter is what
+   stops it from confidently quoting the repealed 2023 clauses. ✓
+3. **Scanned, image-only PDF** — the Faculty Entrepreneurship policy (8 pages, no text layer),
+   which forces the OCR path in `extract.py`. ✓
+4. **Table with real information** — Fee Structure and Grading HTML pages, plus the two Annual
+   Reports. ✓
+5. **Long definitions a fixed chunker would cut** — the 64-page Student Handbook. ✓
+6. **Deliberately absent topic** — student housing / hostel and dormitory policy is excluded on
+   purpose. Questions like "How do I apply for a hostel room?" must return
+   `answered_from_context: false`; this drives the must-abstain evaluation. ✓
+7. **Exact-term content** — fee per credit hour (Fee Structure), CGPA thresholds (Academic
+   Rules), and clause numbers that differ between the handbook and the prospectus. ✓
 
-4. **Attendance Policy** (`Attendance_Policy_Scanned.pdf`)
-   - Format: **Scanned image-only PDF** (no text layer)
-   - Version: current
-   - Pages: ~6
-   - Properties satisfied: scanned/OCR document (property 3)
-   - Notes: Confirmed no text layer with `pdfplumber`: `page.extract_text()` returns empty string for all pages. Processed with `pytesseract` + `pdf2image` (poppler). OCR quality was ~92% on body text. Table headers were partially garbled; manual verification showed fee waiver thresholds were correctly extracted. All pages marked `ocr: True` in the Page model.
+## What could not be recovered (honest)
 
-5. **Examination Rules** (`Examination_Rules.pdf`)
-   - Format: PDF with text layer
-   - Version: current
-   - Pages: ~15
-   - Properties satisfied: long definitions (detailed examination procedures, eligibility clauses spanning multiple paragraphs), exact-term content (minimum passing grade D, grade point values)
-   - Notes: Contains sections on re-examination policy, grade appeals, and academic dishonesty penalties with specific clause numbers (e.g., "Section 7.3.2: Grade Appeal Process").
-
-6. **Student Code of Conduct** (`Student_Code_of_Conduct.html`)
-   - Format: HTML (downloaded from FAST-NUCES website)
-   - Version: current
-   - Pages: 1 (single HTML document, ~12 printed pages equivalent)
-   - Properties satisfied: alternate format (HTML extraction), long definitions
-   - Notes: Extracted as a single Page with `page=1`. Contains disciplinary procedures, prohibited conduct definitions, and penalty scales.
-
-7. **Scholarship Policy** (`Scholarship_Policy.pdf`)
-   - Format: PDF with text layer and tables
-   - Version: current
-   - Pages: ~10
-   - Properties satisfied: exact-term content (minimum CGPA 3.50 for merit scholarship, specific percentage-based fee waivers)
-   - Notes: Contains eligibility tables for different scholarship tiers.
-
-## Deliberately Absent Topic
-
-**Student Housing / Dormitory Policy** is not included in the corpus. Students at FAST-NUCES frequently ask about hostel allocation, room assignments, and residential rules. Questions about housing (e.g., "What are the hostel allocation criteria?", "Is on-campus housing guaranteed for first-year students?") must result in an abstention (`answered_from_context: false`). This satisfies the must-abstain evaluation requirement.
-
-## What Could Not Be Recovered
-
-- The scanned Attendance Policy had a watermark on pages 3–4 that pytesseract occasionally misread as body text. The cleaning stage removes lines matching the watermark pattern.
-- Table 2.1 in the Fee Schedule (merged header cells) lost column alignment during extraction. The cleaning stage re-aligned it using pipe-delimited formatting, but one sub-header was lost.
+- **OCR was not run on the development machine** for this session: `tesseract` and `poppler`
+  are not installed, so the 8 image-only pages of the Faculty Entrepreneurship policy — and
+  the scattered image-only pages found in the 2026 handbook, the student handbook and the 2023
+  rules — were not text-extracted locally. The indexer image installs `tesseract-ocr` and
+  `poppler-utils` (`indexer/Dockerfile`), so OCR runs on the cluster. This is the honest
+  "document the loss" path the assignment allows.
+- **Mixed-scan finding**: the scanned policy is not the only OCR case. Three of the longer
+  "text" PDFs also contain image-only pages, which means OCR coverage matters more than a
+  single-document view would suggest. Recorded in `docs/PIPELINE.md` and
+  `docs/FAILURE-ANALYSIS.md`.

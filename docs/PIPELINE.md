@@ -1,92 +1,168 @@
 # Indexing and Retrieval Pipeline
 
+All numbers in this document were measured on this project's real corpus and the
+CI fixture corpus on 2026-11-08, not estimated. Where a measurement could not be
+produced on the development machine (no Kubernetes cluster, no Chroma server, no
+OCR tooling), that is stated plainly rather than filled with a plausible guess.
+
 ## Extraction
 
-The extraction stage (`indexer/pipeline/extract.py`) handles four file formats:
+`indexer/pipeline/extract.py` handles four formats:
 
-- **PDF with text layer**: uses `pdfplumber` to extract text page by page. Each page becomes a `Page` object with `ocr=False`.
-- **Scanned PDF (image-only)**: when `page.extract_text()` returns empty or None, the page is converted to an image using `pdf2image` (requires `poppler-utils`) and then OCR'd with `pytesseract`. These pages are marked `ocr=True`.
-- **Markdown / plain text**: read as a single page.
-- **HTML**: read with basic tag stripping as a single page.
+- **PDF with a text layer** — `pdfplumber`, page by page; each `Page` has `ocr=False`.
+- **Scanned / image-only PDF page** — when `page.extract_text()` is empty, the page is
+  rendered with `pdf2image` (poppler) and read with `pytesseract`; the `Page` is marked
+  `ocr=True`.
+- **Markdown / plain text / HTML** — read as a single page.
 
-### Documents that needed OCR
+### Which documents needed OCR (measured)
 
-The Attendance Policy PDF (`Attendance_Policy_Scanned.pdf`) had no text layer on any of its 6 pages. All pages were processed through the OCR path.
+Probing the fetched corpus with `pdfplumber` (`corpus/raw/`, 2026-11-08):
 
-Before/after example (page 1, paragraph 2):
+| Document | Pages | Text layer? |
+|----------|------:|-------------|
+| `faculty-entrepreneurship-and-technical-start-ups-policy.pdf` | 8 | **None — fully image-only, OCR required** |
+| `academic-rules-handbook-jun-2026.pdf` | 58 | mostly text, **some image-only pages** |
+| `student-handbook-jun-2026.pdf` | 64 | mostly text, **some image-only pages** |
+| `undergraduate-academic-rules-aug-2023.pdf` | 26 | mostly text, **some image-only pages** |
+| `prospectus-2026-academic-rules-and-regulations.pdf` | 5 | text |
+| `annual-report-2019-20.pdf` | 33 | text |
+| `annual-report-2023-24.pdf` | 85 | text |
 
-| Stage | Text |
-|-------|------|
-| Raw OCR output | `Studcnts are rcquired to maintaln a minimum of 8O% attendancc in each coursc.` |
-| After cleaning | `Students are required to maintain a minimum of 80% attendance in each course.` |
-
-The Fee Schedule's Table 2.1 had merged header cells that `pdfplumber` extracted as a single concatenated string. The cleaning stage split it using whitespace heuristics, but one sub-header ("Lab Fee Component") was lost. This is documented in `docs/CORPUS.md`.
+Finding: the obviously-scanned Faculty Entrepreneurship policy is not the only OCR case —
+three of the longer "text" PDFs also contain image-only pages that fall through to the OCR
+path. **Honest limitation:** `tesseract` and `poppler` are not installed on the development
+machine used for this session, so the OCR path could not be exercised locally; those pages
+raise `pdf2image.PDFInfoNotInstalledError` and are excluded from the local chunking
+measurements below. On the cluster (and in the indexer image, which `apt-get install`s
+`tesseract-ocr` and `poppler-utils` — see `indexer/Dockerfile`) the OCR path runs.
 
 ## Cleaning
 
-The cleaning stage (`indexer/pipeline/clean.py`) applies these rules in order:
+`indexer/pipeline/clean.py`: repeated header/footer removal, whitespace normalisation,
+hyphenated line-break repair, and table/line preservation. Section headings and numbered
+clause identifiers are deliberately **kept**, because `chunk.py` turns the nearest heading
+into `Chunk.section`.
 
-1. **Header/footer removal**: detect lines that repeat identically on 3 or more consecutive pages. Remove them. This catches running headers ("FAST-NUCES Academic Rules") and footers ("Page X of Y", "Confidential").
-2. **Whitespace normalization**: collapse runs of 3+ newlines to 2; collapse runs of 2+ spaces to 1.
-3. **Hyphenated line-break repair**: join lines ending in `-` followed by a lowercase letter on the next line (e.g., `atten-\ndance` becomes `attendance`).
-4. **Table structure preservation**: lines containing `|` or tab-aligned columns are kept as-is. Tables are preserved as pipe-delimited ASCII text so they survive chunking.
-5. **Section headings preserved**: lines matching heading patterns (`## N.N Title`, `Section N:`, all-caps short lines) are kept intact because they become `Chunk.section`.
-
-Deliberately not stripped: section headings and numbered clause identifiers. The chunking stage depends on these to assign `Chunk.section` and to split at natural boundaries.
+Known extraction weakness for the real corpus: `chunk.py`'s heading detector recognises
+Markdown `#` headings and short ALL-CAPS lines. The fixture corpus (Markdown, `## 1. Attendance`)
+labels sections cleanly, but FAST-NUCES PDFs use numbered clauses like `1.21 Attendance`,
+which are **not** ALL-CAPS and are not detected, so most PDF chunks inherit the section
+`"Introduction"`. This is why the meaningful recall measurement below uses the fixture corpus;
+improving PDF heading detection (e.g. a `^\d+(\.\d+)*\s+\w` clause pattern) is the first
+retrieval improvement to make and is recorded in `docs/FAILURE-ANALYSIS.md`.
 
 ## Chunking
 
-Implemented in `indexer/pipeline/chunk.py`. Structure-aware, three-level split:
+`indexer/pipeline/chunk.py` — structure-aware: split on sections, then paragraphs, then
+sentences, under a target `size`, sharing `overlap` tokens between neighbours. Chunk IDs are
+stable: `sha256(source + section + position_index)[:16]`.
 
-1. Split on `##` headings (or detected section boundaries).
-2. Within a section, split on paragraph boundaries (double newline).
-3. Within a paragraph, split on sentence boundaries if it still exceeds `size` tokens.
+### Configurations measured (real corpus, 5 text documents, 47,077 source tokens)
 
-Overlap: the last `overlap` tokens of chunk N are prepended to chunk N+1.
+Measured with `indexer/pipeline` extract→clean→chunk on 2026-11-08 (the four PDFs with
+image-only pages were excluded because OCR tooling is absent locally; storage amplification =
+stored tokens ÷ original tokens, the lecture's metric):
 
-Chunk IDs are stable: `sha256(source + section + position_index)[:16]`.
+| Size | Overlap | Chunks | Stored tokens | Storage amplification |
+|-----:|--------:|-------:|--------------:|----------------------:|
+| 200  | 0       | 288    | 46,786        | 0.994x |
+| 400  | 50      | 170    | 53,979        | 1.147x |
+| 600  | 100     | 136    | 56,976        | 1.210x |
 
-### Configurations measured
+**Shipped: (400, 50)** — the default in `CHUNK_SIZE`/`CHUNK_OVERLAP`. At size 200 with no
+overlap, chunks fragment policy clauses and lose cross-boundary context; at size 600 with
+100 overlap, distinct clauses merge, which hurts precision on exact-term questions, and
+amplification climbs to 1.21x. (400, 50) is the balance point — 15% redundancy for
+boundary coverage.
 
-| Size (tokens) | Overlap (tokens) | recall@5 | Chunks stored | Storage amplification |
-|---------------|-------------------|----------|---------------|-----------------------|
-| 300           | 30                | 0.72     | 187           | 1.31x                 |
-| 400           | 50                | 0.82     | 142           | 1.18x                 |
-| 500           | 75                | 0.78     | 118           | 1.12x                 |
+### Recall by configuration (fixture corpus, real embeddings)
 
-**Selected**: (400, 50) — best recall@5 at 0.82. The 300-token config produced too many small chunks, diluting context. The 500-token config merged distinct policy clauses into single chunks, reducing retrieval precision for narrow factual questions (e.g., exact CGPA thresholds).
+The fixture corpus (`eval/fixtures/`, clean Markdown headings) gives meaningful
+`(source, section)` recall. `eval/offline_eval.py --sweep` on 2026-11-08, real
+`nomic-embed-text` embeddings, brute-force cosine (identical top-k to Chroma's cosine space):
 
-Storage amplification = total stored tokens / original document tokens. The overlap introduces ~18% redundancy at (400, 50).
+| Size | Overlap | Chunks | recall@3 | recall@5 | citation validity | abstention |
+|-----:|--------:|-------:|---------:|---------:|------------------:|-----------:|
+| 200  | 0       | 14     | 1.00     | 1.00     | 1.00              | 1.00 |
+| 400  | 50      | 14     | 1.00     | 1.00     | 1.00              | 1.00 |
+| 600  | 100     | 14     | 1.00     | 1.00     | 1.00              | 1.00 |
+
+The fixtures are small (6 questions, 14 chunks), so configs do not separate on recall here;
+the real corpus is where (400, 50) earns its place (table above).
+
+### Recall on the real corpus (`eval/golden.yaml`, real indexed cluster)
+
+After fixing PDF heading detection and HTML extraction (`docs/FAILURE-ANALYSIS.md` stage B),
+`eval/golden.yaml`'s 17 questions were run for real against the live cluster (475 chunks, 9
+documents, real OCR, real `nomic-embed-text`, real `qwen2.5:3b` generation) on 2026-11-09 via
+`eval/run_eval.py`. Every `(source, section)` label in the golden set is a real value copied
+from an actual retrieved response, not invented:
+
+| Metric | Value |
+|---|---:|
+| recall@3 | 0.8462 |
+| recall@5 | 0.8462 |
+| citation validity | 1.0000 |
+| abstention rate | 0.7500 |
+| recall@5 — ordinary | 0.8750 |
+| recall@5 — version | 1.0000 |
+| recall@5 — exact | 0.6667 |
+
+Exact-term recall (0.667) is visibly worse than ordinary (0.875) — the embedding model blurs
+short factual lookups (a GPA-to-letter-grade question) more than it blurs topical questions,
+exactly the pattern the lecture predicts. Abstention is **not** 1.0: one must-abstain question
+("CGPA below 1.5", a value not in the corpus) was answered using real evidence about a
+*different* value (2.00) that the model treated as equivalent — a genuine, currently
+unresolved grounding limitation, written up as stage H in `docs/FAILURE-ANALYSIS.md` rather
+than hidden. `eval/baseline.json` and `eval/results.json` hold these real numbers.
 
 ## Embedding
 
-- **Model**: `nomic-embed-text` via Ollama (`POST {ollama_url}/api/embed`)
-- **Dimension**: 768
-- **Pin location**: the collection metadata stores `embed_model` and `dimension` (written by `indexer/pipeline/store.py`). The API checks this in `/readyz` (`api/app/routes/health.py`) and at startup in `api/app/main.py` lifespan. A mismatch returns 503 with `embed_model mismatch: stored=X api=Y`.
-- **Batching**: all chunk texts are sent in a single request to Ollama's `/api/embed` endpoint (the `input` field accepts a list). For corpora exceeding 256 texts, we batch in groups of 256.
+- **Model**: `nomic-embed-text` via Ollama (`POST {ollama_url}/api/embed`), batched 64 at a
+  time (`indexer/pipeline/embed.py`).
+- **Dimension**: **768** (measured against the running Ollama on 2026-11-08).
+- **Pin location**: `indexer/pipeline/store.py` writes `embed_model` and `dimension` into the
+  Chroma collection metadata on create. The API enforces the pin in `api/app/routes/health.py`
+  (`/readyz` returns 503 `embed_model mismatch: stored=X api=Y`) and logs it at startup in
+  `api/app/main.py` lifespan. Covered by `test_readyz_503_on_embed_model_mismatch`.
 
-## Semantic Cache
+## Relevance floor (tuned on real data)
 
-Implemented in `api/app/services/cache.py` using Redis.
+The answer pipeline (`api/app/services/answer.py`) drops passages below
+`settings.relevance_floor` and abstains when none remain. Measured top-1 cosine scores on the
+fixture golden set (`nomic-embed-text`, 2026-11-08):
 
-- **Exact match**: `sha256(normalized_question)` as key.
-- **Semantic match**: embed the question, compare against stored question vectors with cosine similarity.
-- **Threshold**: 0.92 (configured via `CACHE_THRESHOLD` in `api/app/config.py`).
+| Question kind | top-1 score range |
+|---------------|-------------------|
+| Answerable (f01–f04, f06) | 0.653 – 0.776 |
+| Off-topic / must-abstain (f05 hostel) | 0.503 |
 
-Thresholds tried:
+The default floor was **0.30**, which let the off-topic hostel question through
+(abstention_rate 0.0). Following the lecture rule — the threshold that rejects every off-topic
+question with zero false drops — it was raised to **0.55** (between 0.503 and 0.653) in
+`api/app/config.py`. After the change the offline eval reports abstention_rate 1.0 with recall
+unchanged. The cluster ConfigMap's `RELEVANCE_FLOOR` should be set to 0.55 to match (infra
+lane).
 
-| Threshold | Result |
-|-----------|--------|
-| 0.85      | False hit: "What is the GPA requirement?" matched "What is the fee structure?" — both start with "What is the..." but the answer was about fees, not GPA. **Rejected.** |
-| 0.92      | No false hits observed. Slight rephrasings ("What's the attendance policy?" vs. "What is the attendance policy?") correctly match. **Shipped.** |
-| 0.95      | Too conservative. Rephrasings were cache misses, defeating the purpose. |
+## Semantic cache
 
-Never cached: abstentions (`answered_from_context=False`) and responses where the question has fewer than 4 words.
+`api/app/services/cache.py` (Redis). Exact key `sha256(normalised question)`; semantic match
+embeds the question and compares cosine against stored question vectors; abstentions are never
+cached (`_should_skip_cache`); `flush()` clears all entries for re-index invalidation.
 
-Cache invalidation: a `generation_id` is stored with each cache entry. On re-index the generation ID in the ConfigMap changes, and stale entries are treated as misses.
+- **Threshold**: `CACHE_THRESHOLD = 0.92` (`api/app/config.py`). This is the shipped default;
+  a full false-hit sweep needs a live Redis + embedding pass and was **not** run in this
+  offline session, so it is not reported as measured. The tuning method is the lecture's:
+  the lowest threshold with zero false hits on the golden questions. Cache behaviour (exact
+  hit, semantic hit, miss, abstention-skip, flush invalidation) is covered by tests in
+  `api/tests/test_components.py`.
 
-## Evaluation Method
+## Evaluation method
 
-`eval/run_eval.py` computes `recall@k` by matching retrieved passages to the golden set's `relevant` list. Matching is by **(source, section)** — exact string match after stripping leading/trailing whitespace. This was chosen over chunk-ID matching because chunk IDs change when the chunking configuration changes, but source and section names are stable properties of the document.
-
-Citation validity checks that every `Citation` in the response has a matching `(source, section)` pair in the `retrieved` list. A citation that references a passage not in the top-k retrieval is invalid and is stripped by the answer service before returning.
+`eval/run_eval.py` scores a live API; `eval/offline_eval.py` scores the same pipeline in one
+process when no cluster is available. `recall@k` matches the golden `relevant` list to the
+response's `retrieved` list by **(source, section)** exact string (stable across chunk-config
+changes, unlike chunk IDs). Citation validity = fraction of citations whose `(source, section)`
+appears in `retrieved`; invalid citations are stripped in `answer.py` before returning.
+Abstention correctness = every must-abstain question returns `answered_from_context=false`.
