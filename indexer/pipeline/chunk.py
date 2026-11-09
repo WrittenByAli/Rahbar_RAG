@@ -96,9 +96,7 @@ def _looks_like_table_row(stripped: str) -> bool:
     if single_char_tokens >= 2:
         return True
     digit_chars = sum(1 for ch in stripped if ch.isdigit())
-    if digit_chars / max(len(stripped), 1) > 0.3:
-        return True
-    return False
+    return digit_chars / max(len(stripped), 1) > 0.3
 
 
 def _extract_heading(line: str) -> str | None:
