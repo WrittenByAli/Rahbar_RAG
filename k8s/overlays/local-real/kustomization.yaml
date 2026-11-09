@@ -1,0 +1,57 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+patches:
+  - patch: |-
+      - op: replace
+        path: /data/RETRIEVER
+        value: chroma
+      - op: replace
+        path: /data/LLM_PROVIDER
+        value: ollama-host
+      - op: replace
+        path: /data/EMBED_MODEL
+        value: nomic-embed-text
+      - op: replace
+        path: /data/RELEVANCE_FLOOR
+        value: "0.55"
+      - op: replace
+        path: /data/LLM_MODEL
+        value: qwen2.5:3b
+    target:
+      kind: ConfigMap
+      name: rahbar-config
+  - patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/args
+    target:
+      kind: Job
+      name: indexer-initial
+  # local-dev only: also accept Host "localhost" so a browser can reach the stack
+  # via `kubectl port-forward svc/ingress-nginx-controller` without editing /etc/hosts.
+  # base keeps host rahbar.local untouched.
+  - patch: |-
+      - op: add
+        path: /spec/rules/-
+        value:
+          host: localhost
+          http:
+            paths:
+              - path: /api
+                pathType: Prefix
+                backend:
+                  service:
+                    name: api
+                    port:
+                      number: 80
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: ui
+                    port:
+                      number: 80
+    target:
+      kind: Ingress
+      name: rahbar
