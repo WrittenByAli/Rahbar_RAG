@@ -119,12 +119,10 @@ GitHub-admin items first, except to actually open/merge the PR.
 
 ## P3 — Small, mechanical fixes
 
-- [ ] `CLAUDE.md` itself trips the checker's "0 · starter kit" section: it contains the literal
-  string `STARTER-TODO` 3 times (lines ~52, ~526, ~578), purely in prose explaining the marker
+- [x] `CLAUDE.md` itself tripped the checker's "0 · starter kit" section: it contained the
+  marker literal 3 times (lines ~52, ~526, ~578), purely in prose explaining the marker
   convention. `scripts/check_submission.py` must never be edited (per its own docstring and
-  CLAUDE.md section 1) — instead reword those 3 lines so the literal substring doesn't appear
-  (e.g. split it or describe the convention without repeating it verbatim), or drop `CLAUDE.md`
-  from the final submission entirely if it's not meant to be graded content.
+  CLAUDE.md section 1) — reworded those 3 lines so the literal substring no longer appears.
 - [ ] Double check `docs/adr/0004-*.md` — the PDF names it
   `0004-llm-provider-and-data-governance.md`, CLAUDE.md says
   `0004-llm-provider-and-pii.md`. The checker only requires that *an* ADR names the

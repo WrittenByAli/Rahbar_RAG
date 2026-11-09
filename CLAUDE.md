@@ -49,7 +49,7 @@ RAHBAR is a Retrieval-Augmented Generation (RAG) system that answers questions a
 
 ## 3. What Is Yours (All Graded Work)
 
-Track progress with the `STARTER-TODO(section)` markers. Remove each when done.  
+Track progress with the per-section starter-kit TODO markers (see STARTER.md for the exact format). Remove each when done.  
 Run `python scripts/check_submission.py` after every major change.
 
 ### Section 3.1 — Indexer Pipeline Stages
@@ -523,7 +523,7 @@ python scripts/check_submission.py
 Run this frequently. The checker is a lint — it catches mechanical mistakes that map to automatic deductions. A clean run does not mean you pass the viva.
 
 Key things it checks:
-- Zero `STARTER-TODO` markers remaining
+- Zero starter-kit TODO markers remaining
 - Zero `raise NotImplementedError` in source (except tests)
 - ≥4 ADRs with one named `job`
 - ≥5 evidence files
@@ -575,5 +575,5 @@ Key things it checks:
 - The assignment PDF is at [docs/PDF Assignment 02, RAHBAR Grounded RAG on Kubernetes.pdf](docs/PDF%20Assignment%2002%2C%20RAHBAR%20Grounded%20RAG%20on%20Kubernetes.pdf)
 - The submission checker is the ground truth for mechanical requirements — read its source before claiming something is done
 - The eval gate is the ground truth for retrieval quality — `eval/baseline.json` must be committed
-- Section numbers in `STARTER-TODO(N)` match sections in the assignment PDF case study
+- Section numbers in each starter-kit TODO marker's `(N)` suffix match sections in the assignment PDF case study
 - `docs/adr/0000-template.md` is the ADR template — copy it, never edit it
