@@ -186,4 +186,12 @@ jobs:
             curl -sf http://localhost:8080/healthz >/dev/null 2>&1 && break
             sleep 1
           done
+          echo "::group::Diagnostics: raw /api/ask response and config before scoring"
+          curl -s http://localhost:8080/readyz
+          echo ""
+          curl -s -X POST http://localhost:8080/api/ask -H "Content-Type: application/json" \
+            -d '{"question":"When is a student placed on academic warning?"}'
+          echo ""
+          kubectl exec -n rahbar deploy/api -- env | grep -E "RETRIEVER|EMBED_MODEL|RELEVANCE_FLOOR|LLM_PROVIDER|CHROMA_COLLECTION" | sort
+          echo "::endgroup::"
           python eval/run_eval.py --api http://localhost:8080 --golden eval/fixtures/golden.fixture.yaml
