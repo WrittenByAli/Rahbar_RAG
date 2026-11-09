@@ -177,5 +177,13 @@ jobs:
       - name: Run eval
         run: |
           pip install httpx pyyaml
-          API_URL=$(kubectl get svc api -n rahbar -o jsonpath='{.spec.clusterIP}')
-          python eval/run_eval.py --api http://$API_URL --golden eval/fixtures/golden.fixture.yaml
+          # The api Service's ClusterIP is only routable inside the cluster's pod
+          # network, not from this runner process - run_eval.py was never actually
+          # able to reach it this way (the || true that used to be here masked a
+          # ConnectTimeout on every single run). Port-forward instead.
+          kubectl port-forward svc/api 8080:80 -n rahbar >/tmp/port-forward.log 2>&1 &
+          for i in $(seq 1 15); do
+            curl -sf http://localhost:8080/healthz >/dev/null 2>&1 && break
+            sleep 1
+          done
+          python eval/run_eval.py --api http://localhost:8080 --golden eval/fixtures/golden.fixture.yaml
