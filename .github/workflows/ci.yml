@@ -173,7 +173,17 @@ jobs:
             exit 1
           fi
       - name: Wait for API readiness against the real index
-        run: kubectl wait --for=condition=available deployment/api -n rahbar --timeout=180s
+        run: |
+          # --for=condition=available is too weak here: with maxUnavailable: 0 the
+          # Deployment can report "Available" while the rolling restart (triggered
+          # after the ConfigMap patch, two steps up) is still in progress and old
+          # pods - still running on the pre-patch RETRIEVER=stub/EMBED_MODEL=dummy-768
+          # config - are still being served by the Service. recall@5 silently
+          # computed to 0 and abstention to 0 because eval was hitting those stale
+          # pods. rollout status waits for every replica to actually be the new
+          # generation before returning.
+          kubectl rollout status deployment/api -n rahbar --timeout=180s
+          kubectl wait --for=condition=available deployment/api -n rahbar --timeout=30s
       - name: Run eval
         run: |
           pip install httpx pyyaml
