@@ -112,6 +112,17 @@ jobs:
         run: |
           kubectl kustomize k8s/overlays/dev/ | sed "s|rahbar-api:dev|rahbar-api:${{ github.sha }}|g; s|rahbar-indexer:dev|rahbar-indexer:${{ github.sha }}|g; s|rahbar-ui:dev|rahbar-ui:${{ github.sha }}|g" | kubectl apply -f -
           kubectl create secret generic rahbar-secret -n rahbar --from-literal=LLM_API_KEY=unused --dry-run=client -o yaml | kubectl apply -f -
+          # 3 full api replicas + chroma + redis + the Ollama sidecar on a single
+          # shared runner node was intermittently starving the scheduler (rollout
+          # observed stuck for minutes at a time, twice). e2e only needs to prove
+          # the RAG pipeline is correct, not re-prove the 3-replica production
+          # architecture (already evidenced for real in docs/evidence/kubectl-top.txt
+          # / get-hpa.txt from the live cluster) - scale to 1 right away, before
+          # anything else, so this is its own settled transition rather than
+          # fighting a later rollout restart. Nothing in the committed manifests
+          # (still 3 replicas) changes.
+          kubectl scale deployment/api -n rahbar --replicas=1
+          kubectl rollout status deployment/api -n rahbar --timeout=120s
           # The indexer writes to Chroma as soon as it starts; nothing upstream ever
           # waited for the chroma-0 pod to actually be accepting connections first, so
           # the indexer Job could (and did) race chroma's own startup and see
@@ -173,7 +184,17 @@ jobs:
             exit 1
           fi
       - name: Wait for API readiness against the real index
-        run: kubectl wait --for=condition=available deployment/api -n rahbar --timeout=180s
+        run: |
+          # --for=condition=available is too weak here: with maxUnavailable: 0 the
+          # Deployment can report "Available" while the rolling restart (triggered
+          # after the ConfigMap patch, two steps up) is still in progress and old
+          # pods - still running on the pre-patch RETRIEVER=stub/EMBED_MODEL=dummy-768
+          # config - are still being served by the Service. recall@5 silently
+          # computed to 0 and abstention to 0 because eval was hitting those stale
+          # pods. rollout status waits for every replica to actually be the new
+          # generation before returning.
+          kubectl rollout status deployment/api -n rahbar --timeout=180s
+          kubectl wait --for=condition=available deployment/api -n rahbar --timeout=30s
       - name: Run eval
         run: |
           pip install httpx pyyaml
@@ -186,4 +207,12 @@ jobs:
             curl -sf http://localhost:8080/healthz >/dev/null 2>&1 && break
             sleep 1
           done
+          echo "::group::Diagnostics: raw /api/ask response and config before scoring"
+          curl -s http://localhost:8080/readyz
+          echo ""
+          curl -s -X POST http://localhost:8080/api/ask -H "Content-Type: application/json" \
+            -d '{"question":"When is a student placed on academic warning?"}'
+          echo ""
+          kubectl exec -n rahbar deploy/api -- env | grep -E "RETRIEVER|EMBED_MODEL|RELEVANCE_FLOOR|LLM_PROVIDER|CHROMA_COLLECTION" | sort
+          echo "::endgroup::"
           python eval/run_eval.py --api http://localhost:8080 --golden eval/fixtures/golden.fixture.yaml
