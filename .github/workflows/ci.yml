@@ -121,6 +121,14 @@ jobs:
         run: |
           kubectl patch configmap rahbar-config -n rahbar --type merge -p \
             "{\"data\":{\"RETRIEVER\":\"chroma\",\"EMBED_MODEL\":\"nomic-embed-text\",\"OLLAMA_URL\":\"http://${OLLAMA_IP}:11434\"}}"
+          # 3 full api replicas + chroma + redis + the Ollama sidecar on a single
+          # shared runner node was intermittently starving the scheduler (rollout
+          # observed stuck at "2 of 3 new replicas" for 2+ minutes, twice). e2e only
+          # needs to prove the RAG pipeline is correct, not re-prove the 3-replica
+          # production architecture (already evidenced for real in
+          # docs/evidence/kubectl-top.txt / get-hpa.txt from the live cluster) -
+          # scale to 1 for this job only, nothing in the committed manifests changes.
+          kubectl scale deployment/api -n rahbar --replicas=1
           kubectl rollout restart deployment/api -n rahbar
       - name: Run indexer against the fixture corpus
         run: |
