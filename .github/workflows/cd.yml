@@ -3,6 +3,7 @@ name: CD
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   test:
@@ -98,6 +99,14 @@ jobs:
              s|rahbar-ui:dev|${{ secrets.DOCKERHUB_USERNAME }}/rahbar-ui:${{ github.sha }}|g" \
             | kubectl apply -f -
           kubectl create secret generic rahbar-secret -n rahbar --from-literal=LLM_API_KEY=unused --dry-run=client -o yaml | kubectl apply -f -
+          # 3 api replicas + chroma + redis starve a single shared runner node, so run
+          # 1 replica here (the 3-replica topology is evidenced from the real cluster
+          # in docs/evidence/). The HPA must go first: its minReplicas: 3 re-scaled
+          # the Deployment straight back to 3 the moment it was scaled down. No
+          # rollout wait yet - with RETRIEVER=chroma, /readyz is 503 until the
+          # indexer below has written a non-empty collection.
+          kubectl delete hpa api-hpa -n rahbar
+          kubectl scale deployment/api -n rahbar --replicas=1
           kubectl wait --for=condition=ready pod -l app=chroma -n rahbar --timeout=120s
       - name: Run the indexer (dummy mode, matching the documented week-1 bootstrap)
         run: |
@@ -110,10 +119,11 @@ jobs:
           # Job -> StatefulSet -> Service -> probes -> Ingress chain without a model.
           kubectl patch configmap rahbar-config -n rahbar --type merge -p '{"data":{"EMBED_MODEL":"dummy-768"}}'
           kubectl delete job indexer-initial -n rahbar --ignore-not-found
-          kubectl kustomize k8s/overlays/prod/ | sed \
-            "s|rahbar-api:dev|${{ secrets.DOCKERHUB_USERNAME }}/rahbar-api:${{ github.sha }}|g; \
-             s|rahbar-indexer:dev|${{ secrets.DOCKERHUB_USERNAME }}/rahbar-indexer:${{ github.sha }}|g; \
-             s|rahbar-ui:dev|${{ secrets.DOCKERHUB_USERNAME }}/rahbar-ui:${{ github.sha }}|g" \
+          # Re-apply only the Job: re-applying everything would restore replicas: 3
+          # and the HPA removed above.
+          kubectl kustomize k8s/overlays/prod/ \
+            | yq 'select(.kind == "Job")' \
+            | sed "s|rahbar-indexer:dev|${{ secrets.DOCKERHUB_USERNAME }}/rahbar-indexer:${{ github.sha }}|g" \
             | kubectl apply -f -
           if ! kubectl wait --for=condition=complete job/indexer-initial -n rahbar --timeout=120s; then
             echo "::group::Diagnostics: indexer-initial did not complete"
@@ -126,7 +136,14 @@ jobs:
       - name: Roll out api and ui, now that the index exists
         run: |
           kubectl rollout restart deployment/api -n rahbar
-          kubectl rollout status deployment/api -n rahbar --timeout=180s
+          if ! kubectl rollout status deployment/api -n rahbar --timeout=180s; then
+            echo "::group::Diagnostics: api rollout did not finish"
+            kubectl get pods -n rahbar -o wide
+            kubectl describe deployment/api -n rahbar
+            kubectl logs -n rahbar -l app=api --all-containers --prefix --tail=-1 || true
+            echo "::endgroup::"
+            exit 1
+          fi
           kubectl rollout status deployment/ui -n rahbar --timeout=180s
       - name: Smoke test through the Service
         run: |
